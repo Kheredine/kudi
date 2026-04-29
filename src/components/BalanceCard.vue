@@ -1,0 +1,51 @@
+<script setup>
+import { useFinance } from '../composables/useFinance'
+import { usePrivacy } from '../composables/usePrivacy'
+
+const { state, balance, daysUntilPayday, getCurrencySymbol, fmtCurrency } = useFinance()
+const { isUnlocked, toggleBlur } = usePrivacy()
+
+function formatMoney(amount) {
+  return fmtCurrency(amount, state.settings.baseCurrency)
+}
+</script>
+
+<template>
+  <div class="px-5 lg:px-8 pt-8 lg:pt-10 pb-6">
+    <div class="mb-2">
+      <div class="flex items-center justify-between mb-2">
+        <p class="text-text-secondary text-sm font-medium">Available balance</p>
+        <!-- Privacy toggle button -->
+        <button
+          class="w-8 h-8 rounded-full flex items-center justify-center transition-all duration-200"
+          :class="isUnlocked
+            ? 'bg-primary/10 text-primary hover:bg-primary/20'
+            : 'bg-surface text-text-secondary hover:text-text-primary'"
+          :title="isUnlocked ? 'Hide balance' : 'Reveal balance'"
+          @click="toggleBlur"
+        >
+          <!-- Eye open (unlocked) -->
+          <svg v-if="isUnlocked" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z" />
+            <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+          </svg>
+          <!-- Eye closed (locked) -->
+          <svg v-else class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M3.98 8.223A10.477 10.477 0 001.934 12C3.226 16.338 7.244 19.5 12 19.5c.993 0 1.953-.138 2.863-.395M6.228 6.228A10.45 10.45 0 0112 4.5c4.756 0 8.773 3.162 10.065 7.498a10.523 10.523 0 01-4.293 5.774M6.228 6.228L3 3m3.228 3.228l3.65 3.65m7.894 7.894L21 21m-3.228-3.228l-3.65-3.65m0 0a3 3 0 10-4.243-4.243m4.242 4.242L9.88 9.88" />
+          </svg>
+        </button>
+      </div>
+      <h1 class="text-4xl lg:text-5xl font-extrabold tracking-tight text-text-primary transition-all duration-300"
+        :class="{ 'blur-lg select-none': !isUnlocked }"
+      >
+        {{ formatMoney(balance) }}
+      </h1>
+      <p class="text-text-secondary text-sm mt-3 flex items-center gap-1.5">
+        <svg class="w-4 h-4 text-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z" />
+        </svg>
+        Next payday in <span class="text-text-primary font-semibold">{{ daysUntilPayday }} days</span>
+      </p>
+    </div>
+  </div>
+</template>
