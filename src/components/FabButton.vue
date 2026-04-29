@@ -1,8 +1,8 @@
 <script setup>
-import { ref, nextTick } from 'vue'
+import { ref, computed, nextTick, watch } from 'vue'
 import { useFinance } from '../composables/useFinance'
 
-const { addTransaction, addShift } = useFinance()
+const { addTransaction, addShift, state, getCurrencySymbol } = useFinance()
 
 const isOpen = ref(false)
 const mode = ref(null) // null | 'smart' | 'expense' | 'shift' | 'income' | 'saving'
@@ -13,12 +13,88 @@ const category = ref('Food & Drink')
 const date = ref(new Date().toISOString().split('T')[0])
 const startTime = ref('09:00')
 const endTime = ref('17:00')
-const hourlyRate = ref(25)
+const breakMinutes = ref(0)
 const smartInputRef = ref(null)
+
+// Pre-fill hourly rate from settings or last shift
+const lastRate = computed(() => {
+  if (state.shifts.length > 0) {
+    const rates = state.shifts.map(s => s.hourly_rate || 0).filter(r => r > 0)
+    if (rates.length > 0) return rates[rates.length - 1]
+  }
+  return 25
+})
+const hourlyRate = ref(lastRate.value)
+
+const currencySymbol = computed(() => getCurrencySymbol(state.settings.baseCurrency))
 
 const expenseCategories = ['Food & Drink', 'Subscription', 'Transport', 'Shopping', 'Entertainment', 'Utilities', 'Other']
 const incomeCategories = ['Income', 'Freelance', 'Gift', 'Other']
 const savingCategories = ['Savings', 'Vault', 'Emergency Fund', 'Investment']
+
+// ============================================================
+// SHIFT AUTO-CALCULATION (Real-time)
+// ============================================================
+
+const shiftCalc = computed(() => {
+  if (!startTime.value || !endTime.value) return { hours: 0, amount: 0, valid: false }
+
+  const [startH, startM] = startTime.value.split(':').map(Number)
+  const [endH, endM] = endTime.value.split(':').map(Number)
+
+  let startMinutes = startH * 60 + startM
+  let endMinutes = endH * 60 + endM
+
+  // Overnight shift detection
+  if (endMinutes <= startMinutes) {
+    endMinutes += 24 * 60
+  }
+
+  const totalMinutes = endMinutes - startMinutes
+  const breakTotal = Number(breakMinutes.value) || 0
+  const netMinutes = Math.max(0, totalMinutes - breakTotal)
+  const hours = Math.round((netMinutes / 60) * 100) / 100
+  const rate = Number(hourlyRate.value) || 0
+  const calcAmount = Math.round(hours * rate * 100) / 100
+
+  return {
+    hours,
+    amount: calcAmount,
+    valid: hours > 0 && rate > 0,
+    isOvernight: endMinutes > 24 * 60,
+  }
+})
+
+// Animation trigger for amount changes
+const amountFlash = ref(false)
+watch(() => shiftCalc.value.amount, () => {
+  amountFlash.value = true
+  setTimeout(() => { amountFlash.value = false }, 300)
+})
+
+// Quick-fill presets
+const shiftPresets = [
+  { label: '4h', hours: 4 },
+  { label: '6h', hours: 6 },
+  { label: '8h', hours: 8 },
+  { label: '10h', hours: 10 },
+  { label: '12h', hours: 12 },
+]
+
+function applyPreset(hours) {
+  const now = new Date()
+  const startH = now.getHours()
+  const startM = now.getMinutes()
+  startTime.value = `${String(startH).padStart(2, '0')}:${String(startM).padStart(2, '0')}`
+  const endTotalMin = startH * 60 + startM + hours * 60
+  const endH = Math.floor(endTotalMin / 60) % 24
+  const endMin = endTotalMin % 60
+  endTime.value = `${String(endH).padStart(2, '0')}:${String(endMin).padStart(2, '0')}`
+}
+
+// ============================================================
+// ACTIONS
+// ============================================================
 
 function openAction() {
   isOpen.value = true
@@ -38,7 +114,8 @@ function resetForm() {
   date.value = new Date().toISOString().split('T')[0]
   startTime.value = '09:00'
   endTime.value = '17:00'
-  hourlyRate.value = 25
+  breakMinutes.value = 0
+  hourlyRate.value = lastRate.value
 }
 
 function selectAction(action) {
@@ -53,7 +130,6 @@ function parseSmartInput(input) {
   const trimmed = input.trim()
   if (!trimmed) return null
 
-  // Try to extract number from start
   const match = trimmed.match(/^(\d+\.?\d*)\s*(.*)/)
   if (match) {
     return {
@@ -63,7 +139,6 @@ function parseSmartInput(input) {
     }
   }
 
-  // Try number at end
   const matchEnd = trimmed.match(/(.+?)\s+(\d+\.?\d*)$/)
   if (matchEnd) {
     return {
@@ -109,18 +184,35 @@ function handleSmartSubmit() {
 }
 
 function handleFormSubmit() {
-  const numAmount = parseFloat(amount.value)
-  if (isNaN(numAmount) || numAmount <= 0) return
-
   if (mode.value === 'shift') {
+    if (!shiftCalc.value.valid) return
+
+    // Add the shift
     addShift({
       date: date.value,
       start_time: startTime.value,
       end_time: endTime.value,
-      break_hours: 1,
-      hourly_rate: hourlyRate.value,
+      break_hours: Number(breakMinutes.value) / 60 || 0,
+      hourly_rate: Number(hourlyRate.value),
+    })
+
+    // Also add as income transaction
+    const hoursStr = shiftCalc.value.hours % 1 === 0
+      ? `${shiftCalc.value.hours}`
+      : `${shiftCalc.value.hours.toFixed(1)}`
+    addTransaction({
+      type: 'income',
+      amount: shiftCalc.value.amount,
+      currency: state.settings.baseCurrency,
+      category: 'Income',
+      label: `Work shift (${startTime.value}–${endTime.value})`,
+      date: date.value,
+      note: `${hoursStr}h × ${Number(hourlyRate.value).toLocaleString()} ${currencySymbol.value}/h`,
     })
   } else {
+    const numAmount = parseFloat(amount.value)
+    if (isNaN(numAmount) || numAmount <= 0) return
+
     addTransaction({
       type: mode.value === 'income' ? 'income' : mode.value === 'saving' ? 'saving' : 'expense',
       amount: numAmount,
@@ -266,12 +358,146 @@ function getCategories() {
             </h3>
           </div>
 
-          <form @submit.prevent="handleFormSubmit" class="space-y-4">
+          <!-- ============================================ -->
+          <!-- SHIFT FORM (Enhanced with auto-calculation) -->
+          <!-- ============================================ -->
+          <form v-if="mode === 'shift'" @submit.prevent="handleFormSubmit" class="space-y-4">
+            <!-- Date -->
+            <div>
+              <label class="text-xs font-medium text-text-secondary mb-1.5 block">Date</label>
+              <input
+                v-model="date"
+                type="date"
+                class="w-full bg-surface border border-border rounded-xl px-4 py-3 text-text-primary text-sm focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20 transition-all"
+              />
+            </div>
+
+            <!-- Start / End time -->
+            <div class="grid grid-cols-2 gap-3">
+              <div>
+                <label class="text-xs font-medium text-text-secondary mb-1.5 block">Start Time</label>
+                <input
+                  v-model="startTime"
+                  type="time"
+                  class="w-full bg-surface border border-border rounded-xl px-4 py-3 text-text-primary text-sm focus:outline-none focus:border-primary/50 transition-all"
+                />
+              </div>
+              <div>
+                <label class="text-xs font-medium text-text-secondary mb-1.5 block">End Time</label>
+                <input
+                  v-model="endTime"
+                  type="time"
+                  class="w-full bg-surface border border-border rounded-xl px-4 py-3 text-text-primary text-sm focus:outline-none focus:border-primary/50 transition-all"
+                />
+              </div>
+            </div>
+
+            <!-- Break time -->
+            <div>
+              <label class="text-xs font-medium text-text-secondary mb-1.5 block">Break <span class="text-text-secondary/50">(minutes)</span></label>
+              <input
+                v-model="breakMinutes"
+                type="number"
+                min="0"
+                step="15"
+                placeholder="0"
+                class="w-full bg-surface border border-border rounded-xl px-4 py-3 text-text-primary text-sm placeholder:text-text-secondary/50 focus:outline-none focus:border-primary/50 transition-all"
+              />
+            </div>
+
+            <!-- Hourly Rate -->
+            <div>
+              <label class="text-xs font-medium text-text-secondary mb-1.5 block">Hourly Rate</label>
+              <div class="relative">
+                <span class="absolute left-4 top-1/2 -translate-y-1/2 text-text-secondary text-sm">{{ currencySymbol }}</span>
+                <input
+                  v-model="hourlyRate"
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  placeholder="0"
+                  class="w-full bg-surface border border-border rounded-xl pl-8 pr-4 py-3 text-text-primary text-sm placeholder:text-text-secondary/50 focus:outline-none focus:border-primary/50 transition-all"
+                />
+              </div>
+            </div>
+
+            <!-- Quick-fill presets -->
+            <div>
+              <label class="text-xs font-medium text-text-secondary mb-1.5 block">Quick Fill</label>
+              <div class="flex gap-2">
+                <button
+                  v-for="preset in shiftPresets"
+                  :key="preset.label"
+                  type="button"
+                  class="flex-1 py-2 rounded-lg text-xs font-medium bg-surface border border-border text-text-secondary hover:border-primary/30 hover:text-primary active:scale-95 transition-all"
+                  @click="applyPreset(preset.hours)"
+                >
+                  {{ preset.label }}
+                </button>
+              </div>
+            </div>
+
+            <!-- Live Calculation Display -->
+            <div
+              class="rounded-2xl p-4 transition-all duration-300"
+              :class="shiftCalc.valid
+                ? 'bg-primary/10 border border-primary/20'
+                : 'bg-surface border border-border'"
+            >
+              <div class="flex items-center justify-between mb-2">
+                <span class="text-xs font-medium text-text-secondary">Total Hours</span>
+                <span class="text-sm font-bold text-text-primary">
+                  {{ shiftCalc.hours % 1 === 0 ? shiftCalc.hours : shiftCalc.hours.toFixed(1) }}h
+                  <span v-if="shiftCalc.isOvernight" class="text-[10px] text-amber-400 ml-1">🌙 overnight</span>
+                </span>
+              </div>
+              <div class="flex items-center justify-between">
+                <span class="text-xs font-medium text-text-secondary">Earned</span>
+                <span
+                  class="text-lg font-bold transition-all duration-300"
+                  :class="[
+                    shiftCalc.valid ? 'text-primary' : 'text-text-secondary',
+                    amountFlash ? 'scale-110' : 'scale-100'
+                  ]"
+                >
+                  {{ currencySymbol }}{{ shiftCalc.amount.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 2 }) }}
+                </span>
+              </div>
+              <div v-if="shiftCalc.hours > 0 && Number(hourlyRate) > 0" class="mt-2 pt-2 border-t border-border/50">
+                <p class="text-[10px] text-text-secondary">
+                  {{ shiftCalc.hours }}h × {{ Number(hourlyRate).toLocaleString() }} {{ currencySymbol }}/h
+                  <span v-if="breakMinutes > 0"> · {{ breakMinutes }}min break</span>
+                </p>
+              </div>
+            </div>
+
+            <!-- Validation errors -->
+            <div v-if="startTime && endTime && shiftCalc.hours <= 0" class="text-xs text-danger">
+              ⚠️ End time must be after start time
+            </div>
+
+            <!-- Submit -->
+            <button
+              type="submit"
+              class="w-full font-semibold py-3.5 rounded-xl transition-all duration-200 active:scale-[0.98]"
+              :class="shiftCalc.valid
+                ? 'bg-primary hover:bg-primary-dim text-white'
+                : 'bg-surface text-text-secondary cursor-not-allowed'"
+              :disabled="!shiftCalc.valid"
+            >
+              Add Shift
+            </button>
+          </form>
+
+          <!-- ============================================ -->
+          <!-- TRANSACTION FORM (expense / income / saving) -->
+          <!-- ============================================ -->
+          <form v-else @submit.prevent="handleFormSubmit" class="space-y-4">
             <!-- Amount -->
             <div>
               <label class="text-xs font-medium text-text-secondary mb-1.5 block">Amount</label>
               <div class="relative">
-                <span class="absolute left-4 top-1/2 -translate-y-1/2 text-text-secondary text-sm">$</span>
+                <span class="absolute left-4 top-1/2 -translate-y-1/2 text-text-secondary text-sm">{{ currencySymbol }}</span>
                 <input
                   v-model="amount"
                   type="number"
@@ -284,8 +510,8 @@ function getCategories() {
               </div>
             </div>
 
-            <!-- Description (not for shift) -->
-            <div v-if="mode !== 'shift'">
+            <!-- Description -->
+            <div>
               <label class="text-xs font-medium text-text-secondary mb-1.5 block">Description</label>
               <input
                 v-model="label"
@@ -295,8 +521,8 @@ function getCategories() {
               />
             </div>
 
-            <!-- Category (not for shift) -->
-            <div v-if="mode !== 'shift'">
+            <!-- Category -->
+            <div>
               <label class="text-xs font-medium text-text-secondary mb-1.5 block">Category</label>
               <div class="flex flex-wrap gap-2">
                 <button
@@ -314,24 +540,6 @@ function getCategories() {
               </div>
             </div>
 
-            <!-- Shift fields -->
-            <template v-if="mode === 'shift'">
-              <div class="grid grid-cols-2 gap-3">
-                <div>
-                  <label class="text-xs font-medium text-text-secondary mb-1.5 block">Start</label>
-                  <input v-model="startTime" type="time" class="w-full bg-surface border border-border rounded-xl px-4 py-3 text-text-primary text-sm focus:outline-none focus:border-primary/50 transition-all" />
-                </div>
-                <div>
-                  <label class="text-xs font-medium text-text-secondary mb-1.5 block">End</label>
-                  <input v-model="endTime" type="time" class="w-full bg-surface border border-border rounded-xl px-4 py-3 text-text-primary text-sm focus:outline-none focus:border-primary/50 transition-all" />
-                </div>
-              </div>
-              <div>
-                <label class="text-xs font-medium text-text-secondary mb-1.5 block">Hourly Rate ($)</label>
-                <input v-model="hourlyRate" type="number" min="0" class="w-full bg-surface border border-border rounded-xl px-4 py-3 text-text-primary text-sm focus:outline-none focus:border-primary/50 transition-all" />
-              </div>
-            </template>
-
             <!-- Date -->
             <div>
               <label class="text-xs font-medium text-text-secondary mb-1.5 block">Date</label>
@@ -343,7 +551,7 @@ function getCategories() {
             </div>
 
             <button type="submit" class="w-full bg-primary hover:bg-primary-dim text-white font-semibold py-3.5 rounded-xl transition-colors duration-200 active:scale-[0.98]">
-              {{ mode === 'shift' ? 'Add Shift' : 'Save' }}
+              Save
             </button>
           </form>
         </div>
