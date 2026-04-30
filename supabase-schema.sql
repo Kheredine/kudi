@@ -87,6 +87,8 @@ CREATE TABLE recurring (
   day INTEGER,
   day_of_week TEXT,
   active BOOLEAN DEFAULT true,
+  account_id BIGINT REFERENCES accounts(id) ON DELETE SET NULL,
+  goal_id    BIGINT REFERENCES savings_goals(id) ON DELETE SET NULL,
   created_at TIMESTAMPTZ DEFAULT now()
 );
 
