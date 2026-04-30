@@ -1092,7 +1092,7 @@ function getSpendingReport(period = 'monthly') {
   return {
     period,
     startDate: startStr,
-    endDate: todayStr,
+    endDate: today(),
     totalIncome,
     totalExpense,
     net: totalIncome - totalExpense,

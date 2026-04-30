@@ -42,11 +42,16 @@ const profile = ref({
 export async function fetchProfile(userId) {
   if (!userId) return
 
-  const { data, error } = await supabase
-    .from('profiles')
-    .select('*')
-    .eq('id', userId)
-    .maybeSingle()
+  let data, error
+  try {
+    ;({ data, error } = await supabase
+      .from('profiles')
+      .select('*')
+      .eq('id', userId)
+      .maybeSingle())
+  } catch {
+    return
+  }
 
   if (error) {
     console.error('[Profile] fetch error:', error.message)
@@ -82,7 +87,13 @@ export async function fetchProfile(userId) {
 // ============================================================
 
 async function updateProfile(updates) {
-  const { data: { user: authUser } } = await supabase.auth.getUser()
+  let authUser
+  try {
+    const { data } = await supabase.auth.getUser()
+    authUser = data?.user
+  } catch {
+    return { success: false, error: 'Connection error. Please try again.' }
+  }
   if (!authUser) return { success: false, error: 'Not authenticated' }
 
   const patch = {}
@@ -99,7 +110,6 @@ async function updateProfile(updates) {
     return { success: false, error: error.message }
   }
 
-  // Update local state ONLY after successful DB write
   if (updates.username !== undefined) profile.value.username = updates.username
   if (updates.avatar !== undefined) profile.value.avatar = updates.avatar
 
@@ -111,7 +121,13 @@ async function updateProfile(updates) {
 // ============================================================
 
 async function deleteAccount() {
-  const { data: { user: authUser } } = await supabase.auth.getUser()
+  let authUser
+  try {
+    const { data } = await supabase.auth.getUser()
+    authUser = data?.user
+  } catch {
+    return { success: false, error: 'Connection error. Please try again.' }
+  }
   if (!authUser) return { success: false, error: 'Not authenticated' }
 
   const userId = authUser.id

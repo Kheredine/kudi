@@ -82,21 +82,25 @@ RULES:
       const data = await response.json()
       const text = data.choices?.[0]?.message?.content || ''
 
-      // Parse JSON from response
       const jsonMatch = text.match(/\[[\s\S]*\]/)
       if (jsonMatch) {
-        const insights = JSON.parse(jsonMatch[0])
-        cachedInsights.value = insights
-        cachedDate.value = today
-        return insights
+        try {
+          const insights = JSON.parse(jsonMatch[0])
+          cachedInsights.value = insights
+          cachedDate.value = today
+          return insights
+        } catch {
+          // malformed JSON from AI — fall through to return null
+        }
       }
     } catch (err) {
       if (import.meta.env.DEV) {
         console.warn('AI Insights error:', err.message)
       }
+    } finally {
+      loading.value = false
     }
 
-    loading.value = false
     return null
   }
 

@@ -63,35 +63,36 @@ async function signUp(username, password) {
 
   const email = usernameToEmail(username)
 
-  const { data, error: signUpError } = await supabase.auth.signUp({
-    email,
-    password,
-    options: {
-      data: { username: username.trim() },
-    },
-  })
+  try {
+    const { data, error: signUpError } = await supabase.auth.signUp({
+      email,
+      password,
+      options: { data: { username: username.trim() } },
+    })
 
-  if (signUpError) {
-    // Translate common errors
-    let msg = signUpError.message
-    if (msg.includes('already registered')) msg = 'Username is already taken'
-    error.value = msg
+    if (signUpError) {
+      let msg = signUpError.message
+      if (msg.includes('already registered')) msg = 'Username is already taken'
+      error.value = msg
+      return { success: false, error: error.value }
+    }
+
+    if (data.user) {
+      await supabase.from('profiles').upsert({
+        id: data.user.id,
+        user_name: username.trim(),
+        avatar: 'coin',
+        onboarded: false,
+      }).catch(err => console.warn('[signUp] profile upsert failed:', err.message))
+
+      await fetchProfile(data.user.id).catch(() => {})
+    }
+
+    return { success: true }
+  } catch (err) {
+    error.value = 'Connection error. Please check your internet and try again.'
     return { success: false, error: error.value }
   }
-
-  // Create profile row
-  if (data.user) {
-    await supabase.from('profiles').upsert({
-      id: data.user.id,
-      user_name: username.trim(),
-      avatar: 'coin',
-      onboarded: false,
-    })
-    // Fetch the profile into state
-    await fetchProfile(data.user.id)
-  }
-
-  return { success: true }
 }
 
 // ============================================================
@@ -112,31 +113,35 @@ async function login(username, password) {
 
   const email = usernameToEmail(username)
 
-  const { data, error: loginError } = await supabase.auth.signInWithPassword({
-    email,
-    password,
-  })
+  try {
+    const { data, error: loginError } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+    })
 
-  if (loginError) {
-    let msg = loginError.message
-    if (msg.includes('Invalid login credentials')) msg = 'Wrong username or passcode'
-    error.value = msg
+    if (loginError) {
+      let msg = loginError.message
+      if (msg.includes('Invalid login credentials')) msg = 'Wrong username or passcode'
+      error.value = msg
+      return { success: false, error: error.value }
+    }
+
+    if (data.user) {
+      const extractedUsername = data.user.user_metadata?.username || data.user.email?.split('@')[0] || 'User'
+      user.value = {
+        id: data.user.id,
+        email: data.user.email,
+        username: extractedUsername,
+      }
+      isAuthenticated.value = true
+      await fetchProfile(data.user.id).catch(() => {})
+    }
+
+    return { success: true }
+  } catch (err) {
+    error.value = 'Connection error. Please check your internet and try again.'
     return { success: false, error: error.value }
   }
-
-  if (data.user) {
-    const extractedUsername = data.user.user_metadata?.username || data.user.email?.split('@')[0] || 'User'
-    user.value = {
-      id: data.user.id,
-      email: data.user.email,
-      username: extractedUsername,
-    }
-    isAuthenticated.value = true
-    // Fetch profile into state
-    await fetchProfile(data.user.id)
-  }
-
-  return { success: true }
 }
 
 // ============================================================
