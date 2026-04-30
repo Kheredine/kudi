@@ -176,7 +176,6 @@ export function useAuth() {
     loading: computed(() => loading.value),
 
     // Actions
-    signUp,
     login,
     logout,
     clearError,

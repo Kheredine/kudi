@@ -4,36 +4,29 @@ import { useRouter } from 'vue-router'
 import { useAuth } from '../composables/useAuth'
 
 const router = useRouter()
-const { login, signUp, clearError, error } = useAuth()
+const { login, clearError, error } = useAuth()
 
 const username = ref('')
 const passcode = ref('')
 const loading = ref(false)
 const localError = ref('')
-const isSignUp = ref(false)
 
 async function handleSubmit() {
   localError.value = ''
   clearError()
 
   if (!username.value.trim()) {
-    localError.value = 'Please enter a username'
+    localError.value = 'Please enter your username'
     return
   }
-  if (username.value.trim().length < 2) {
-    localError.value = 'Username must be at least 2 characters'
-    return
-  }
-  if (!passcode.value || passcode.value.length < 6) {
-    localError.value = 'Passcode must be at least 6 characters'
+  if (!passcode.value) {
+    localError.value = 'Please enter your passcode'
     return
   }
 
   loading.value = true
 
-  const result = isSignUp.value
-    ? await signUp(username.value, passcode.value)
-    : await login(username.value, passcode.value)
+  const result = await login(username.value, passcode.value)
 
   loading.value = false
 
@@ -65,7 +58,7 @@ async function handleSubmit() {
               <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z" />
             </svg>
           </div>
-          <p class="text-sm text-text-secondary">{{ isSignUp ? 'Create your account' : 'Welcome back' }}</p>
+          <p class="text-sm text-text-secondary">Welcome back</p>
         </div>
 
         <form @submit.prevent="handleSubmit" class="space-y-4">
@@ -75,7 +68,7 @@ async function handleSubmit() {
             <input
               v-model="username"
               type="text"
-              placeholder="Choose a username"
+              placeholder="Enter your username"
               autocomplete="username"
               class="w-full bg-surface border border-border rounded-xl px-4 py-3.5 text-sm text-text-primary placeholder:text-text-secondary/50 focus:outline-none focus:border-primary/50 transition-colors"
             />
@@ -87,7 +80,7 @@ async function handleSubmit() {
             <input
               v-model="passcode"
               type="password"
-              :placeholder="isSignUp ? 'At least 6 characters' : 'Enter your passcode'"
+              placeholder="Enter your passcode"
               autocomplete="current-password"
               class="w-full bg-surface border border-border rounded-xl px-4 py-3.5 text-sm text-text-primary placeholder:text-text-secondary/50 focus:outline-none focus:border-primary/50 transition-colors"
             />
@@ -113,17 +106,10 @@ async function handleSubmit() {
               <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" />
               <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
             </svg>
-            {{ loading ? (isSignUp ? 'Creating account...' : 'Signing in...') : (isSignUp ? 'Create Account' : 'Sign In') }}
+            {{ loading ? 'Signing in...' : 'Sign In' }}
           </button>
         </form>
 
-        <!-- Toggle sign up / sign in -->
-        <button
-          class="w-full text-center text-sm text-text-secondary mt-4 hover:text-primary transition-colors"
-          @click="isSignUp = !isSignUp; localError = ''; clearError()"
-        >
-          {{ isSignUp ? 'Already have an account? Sign in' : "Don't have an account? Sign up" }}
-        </button>
       </div>
     </div>
   </div>
