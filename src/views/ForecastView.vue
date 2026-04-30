@@ -8,8 +8,30 @@ const router = useRouter()
 const {
   forecast, lowestBalancePoint, currentBalance, getCurrencySymbol, state,
   upcomingIncomes, INCOME_TYPE_META,
-  addFutureIncome, deleteFutureIncome,
+  addFutureIncome, deleteFutureIncome, updateFutureIncome, addTransaction,
 } = useFinance()
+
+const todayStr = new Date().toISOString().split('T')[0]
+
+function isOverdue(dueDate) {
+  return dueDate <= todayStr
+}
+
+function markReceived(fi) {
+  updateFutureIncome(fi.id, { status: 'received', receivedAt: fi.dueDate })
+  const refKey = `fi:${fi.id}`
+  addTransaction({
+    type: 'income',
+    label: fi.title,
+    amount: fi.amount,
+    currency: fi.currency || state.settings.baseCurrency,
+    category: 'Income',
+    date: fi.dueDate,
+    accountId: fi.accountId || state.settings.activeAccountId || null,
+    note: 'Marked as received',
+    isRecurringRef: refKey,
+  })
+}
 
 const showExport = ref(false)
 const showAddForm = ref(false)
@@ -142,7 +164,10 @@ function typeMeta(type) {
         <div
           v-for="fi in upcomingIncomes"
           :key="fi.id"
-          class="bg-card border border-border rounded-2xl p-4 hover:border-primary/20 transition-colors"
+          class="rounded-2xl p-4 transition-colors"
+          :class="isOverdue(fi.dueDate)
+            ? 'bg-amber-400/5 border border-amber-400/30'
+            : 'bg-card border border-border hover:border-primary/20'"
         >
           <div class="flex items-start gap-3">
             <!-- Type icon -->
@@ -155,34 +180,44 @@ function typeMeta(type) {
             <div class="flex-1 min-w-0">
               <p class="text-sm font-semibold text-text-primary leading-tight">{{ fi.title }}</p>
               <p v-if="fi.source" class="text-xs text-text-secondary mt-0.5">{{ fi.source }}</p>
-              <!-- Salary metadata -->
               <p v-if="fi.type === 'salary' && fi.meta?.shiftCount" class="text-xs text-text-secondary mt-0.5">
                 {{ fi.meta.shiftCount }} shift{{ fi.meta.shiftCount !== 1 ? 's' : '' }}
                 <template v-if="fi.meta.totalHours"> · {{ fi.meta.totalHours }}h</template>
               </p>
-              <!-- Due date row -->
               <div class="flex items-center gap-2 mt-1.5">
                 <span class="text-xs text-text-secondary">{{ fmtDate(fi.dueDate) }}</span>
-                <span class="text-[10px] px-1.5 py-0.5 rounded-full bg-surface border border-border"
-                      :class="daysAwaySeverity(fi.dueDate)">
-                  {{ daysAway(fi.dueDate) }}
+                <span class="text-[10px] px-1.5 py-0.5 rounded-full border"
+                      :class="isOverdue(fi.dueDate)
+                        ? 'bg-amber-400/10 border-amber-400/30 text-amber-400 font-medium'
+                        : ['bg-surface border-border', daysAwaySeverity(fi.dueDate)]">
+                  {{ isOverdue(fi.dueDate) ? 'Due' : daysAway(fi.dueDate) }}
                 </span>
               </div>
             </div>
 
-            <!-- Amount + delete -->
+            <!-- Amount + actions -->
             <div class="flex flex-col items-end gap-2 shrink-0">
               <p class="text-base font-bold text-primary">
                 +{{ sym() }}{{ fi.amount.toLocaleString('en-US', { minimumFractionDigits: 2 }) }}
               </p>
-              <button
-                @click="deleteFutureIncome(fi.id)"
-                class="p-1 rounded-lg text-text-secondary/40 hover:text-danger hover:bg-danger/10 transition-colors"
-              >
-                <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                  <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
+              <div class="flex items-center gap-1">
+                <!-- Mark received (only for overdue/due today) -->
+                <button
+                  v-if="isOverdue(fi.dueDate)"
+                  @click="markReceived(fi)"
+                  class="text-[10px] px-2 py-1 rounded-lg bg-primary/10 text-primary font-medium hover:bg-primary/20 transition-colors"
+                >
+                  Received ✓
+                </button>
+                <button
+                  @click="deleteFutureIncome(fi.id)"
+                  class="p-1 rounded-lg text-text-secondary/40 hover:text-danger hover:bg-danger/10 transition-colors"
+                >
+                  <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
             </div>
           </div>
         </div>

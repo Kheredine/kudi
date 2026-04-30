@@ -40,7 +40,8 @@ onMounted(() => {
   fetchInsights()
   autoGenerateRecurring()
   syncShiftIncomes()
-  processReceivedPayments()
+  // processReceivedPayments is NOT called automatically —
+  // income is recorded only when the user taps "Mark as Received" in Forecast
 })
 
 function daysAway(dateStr) {
