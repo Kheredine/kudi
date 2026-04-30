@@ -1,18 +1,31 @@
 -- ============================================================
--- KUDI APP - Supabase Database Schema (Supabase Auth + RLS)
--- Run this in Supabase SQL Editor to set up tables
+-- KUDI APP - Supabase Database Schema (Clean Install)
+-- Run this ENTIRE script in Supabase SQL Editor
 -- ============================================================
 
 -- Enable UUID extension
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
 -- ============================================================
+-- DROP EXISTING TABLES (clean slate)
+-- ============================================================
+DROP TABLE IF EXISTS members CASCADE;
+DROP TABLE IF EXISTS accounts CASCADE;
+DROP TABLE IF EXISTS ious CASCADE;
+DROP TABLE IF EXISTS savings_goals CASCADE;
+DROP TABLE IF EXISTS budgets CASCADE;
+DROP TABLE IF EXISTS recurring CASCADE;
+DROP TABLE IF EXISTS shifts CASCADE;
+DROP TABLE IF EXISTS transactions CASCADE;
+DROP TABLE IF EXISTS profiles CASCADE;
+
+-- ============================================================
 -- USER PROFILES (linked to Supabase Auth)
 -- ============================================================
-CREATE TABLE IF NOT EXISTS profiles (
+CREATE TABLE profiles (
   id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
   user_name TEXT DEFAULT 'User',
-  avatar TEXT,
+  avatar TEXT DEFAULT 'coin',
   base_currency TEXT DEFAULT 'USD',
   payday_day INTEGER DEFAULT 25,
   payday1 INTEGER DEFAULT 10,
@@ -30,7 +43,7 @@ CREATE TABLE IF NOT EXISTS profiles (
 -- ============================================================
 -- TRANSACTIONS
 -- ============================================================
-CREATE TABLE IF NOT EXISTS transactions (
+CREATE TABLE transactions (
   id BIGSERIAL PRIMARY KEY,
   user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
   type TEXT NOT NULL CHECK (type IN ('income', 'expense', 'saving')),
@@ -49,7 +62,7 @@ CREATE TABLE IF NOT EXISTS transactions (
 -- ============================================================
 -- SHIFTS
 -- ============================================================
-CREATE TABLE IF NOT EXISTS shifts (
+CREATE TABLE shifts (
   id BIGSERIAL PRIMARY KEY,
   user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
   date DATE NOT NULL DEFAULT CURRENT_DATE,
@@ -63,7 +76,7 @@ CREATE TABLE IF NOT EXISTS shifts (
 -- ============================================================
 -- RECURRING ITEMS
 -- ============================================================
-CREATE TABLE IF NOT EXISTS recurring (
+CREATE TABLE recurring (
   id BIGSERIAL PRIMARY KEY,
   user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
   name TEXT NOT NULL,
@@ -80,7 +93,7 @@ CREATE TABLE IF NOT EXISTS recurring (
 -- ============================================================
 -- BUDGETS
 -- ============================================================
-CREATE TABLE IF NOT EXISTS budgets (
+CREATE TABLE budgets (
   id BIGSERIAL PRIMARY KEY,
   user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
   category TEXT NOT NULL,
@@ -91,7 +104,7 @@ CREATE TABLE IF NOT EXISTS budgets (
 -- ============================================================
 -- SAVINGS GOALS
 -- ============================================================
-CREATE TABLE IF NOT EXISTS savings_goals (
+CREATE TABLE savings_goals (
   id BIGSERIAL PRIMARY KEY,
   user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
   name TEXT NOT NULL,
@@ -105,7 +118,7 @@ CREATE TABLE IF NOT EXISTS savings_goals (
 -- ============================================================
 -- IOUS (Debts / Loans)
 -- ============================================================
-CREATE TABLE IF NOT EXISTS ious (
+CREATE TABLE ious (
   id BIGSERIAL PRIMARY KEY,
   user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
   person TEXT NOT NULL,
@@ -121,7 +134,7 @@ CREATE TABLE IF NOT EXISTS ious (
 -- ============================================================
 -- ACCOUNTS (Multi-account support)
 -- ============================================================
-CREATE TABLE IF NOT EXISTS accounts (
+CREATE TABLE accounts (
   id BIGSERIAL PRIMARY KEY,
   user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
   name TEXT NOT NULL DEFAULT 'Untitled Account',
@@ -136,7 +149,7 @@ CREATE TABLE IF NOT EXISTS accounts (
 -- ============================================================
 -- MEMBERS (Shared finances)
 -- ============================================================
-CREATE TABLE IF NOT EXISTS members (
+CREATE TABLE members (
   id BIGSERIAL PRIMARY KEY,
   user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
   name TEXT NOT NULL DEFAULT 'Unknown',
@@ -149,23 +162,22 @@ CREATE TABLE IF NOT EXISTS members (
 -- ============================================================
 -- INDEXES for fast queries
 -- ============================================================
-CREATE INDEX IF NOT EXISTS idx_transactions_user ON transactions(user_id);
-CREATE INDEX IF NOT EXISTS idx_transactions_date ON transactions(user_id, date DESC);
-CREATE INDEX IF NOT EXISTS idx_shifts_user ON shifts(user_id);
-CREATE INDEX IF NOT EXISTS idx_shifts_date ON shifts(user_id, date);
-CREATE INDEX IF NOT EXISTS idx_recurring_user ON recurring(user_id);
-CREATE INDEX IF NOT EXISTS idx_budgets_user ON budgets(user_id);
-CREATE INDEX IF NOT EXISTS idx_savings_goals_user ON savings_goals(user_id);
-CREATE INDEX IF NOT EXISTS idx_ious_user ON ious(user_id);
-CREATE INDEX IF NOT EXISTS idx_accounts_user ON accounts(user_id);
-CREATE INDEX IF NOT EXISTS idx_members_user ON members(user_id);
+CREATE INDEX idx_transactions_user ON transactions(user_id);
+CREATE INDEX idx_transactions_date ON transactions(user_id, date DESC);
+CREATE INDEX idx_shifts_user ON shifts(user_id);
+CREATE INDEX idx_shifts_date ON shifts(user_id, date);
+CREATE INDEX idx_recurring_user ON recurring(user_id);
+CREATE INDEX idx_budgets_user ON budgets(user_id);
+CREATE INDEX idx_savings_goals_user ON savings_goals(user_id);
+CREATE INDEX idx_ious_user ON ious(user_id);
+CREATE INDEX idx_accounts_user ON accounts(user_id);
+CREATE INDEX idx_members_user ON members(user_id);
 
 -- ============================================================
--- ROW LEVEL SECURITY (RLS) - SECURE
+-- ROW LEVEL SECURITY (RLS)
 -- Users can ONLY access their own data
 -- ============================================================
 
--- Enable RLS on all tables
 ALTER TABLE profiles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE transactions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE shifts ENABLE ROW LEVEL SECURITY;
@@ -176,38 +188,19 @@ ALTER TABLE ious ENABLE ROW LEVEL SECURITY;
 ALTER TABLE accounts ENABLE ROW LEVEL SECURITY;
 ALTER TABLE members ENABLE ROW LEVEL SECURITY;
 
--- Drop old policies if they exist
-DROP POLICY IF EXISTS "Allow full access to profiles" ON profiles;
-DROP POLICY IF EXISTS "Allow full access to transactions" ON transactions;
-DROP POLICY IF EXISTS "Allow full access to shifts" ON shifts;
-DROP POLICY IF EXISTS "Allow full access to recurring" ON recurring;
-DROP POLICY IF EXISTS "Users can view own profile" ON profiles;
-DROP POLICY IF EXISTS "Users can insert own profile" ON profiles;
-DROP POLICY IF EXISTS "Users can update own profile" ON profiles;
-DROP POLICY IF EXISTS "Users can view own transactions" ON transactions;
-DROP POLICY IF EXISTS "Users can insert own transactions" ON transactions;
-DROP POLICY IF EXISTS "Users can update own transactions" ON transactions;
-DROP POLICY IF EXISTS "Users can delete own transactions" ON transactions;
-DROP POLICY IF EXISTS "Users can view own shifts" ON shifts;
-DROP POLICY IF EXISTS "Users can insert own shifts" ON shifts;
-DROP POLICY IF EXISTS "Users can update own shifts" ON shifts;
-DROP POLICY IF EXISTS "Users can delete own shifts" ON shifts;
-DROP POLICY IF EXISTS "Users can view own recurring" ON recurring;
-DROP POLICY IF EXISTS "Users can insert own recurring" ON recurring;
-DROP POLICY IF EXISTS "Users can update own recurring" ON recurring;
-DROP POLICY IF EXISTS "Users can delete own recurring" ON recurring;
-
 -- ============================================================
--- SECURE POLICIES: user_id = auth.uid()
+-- RLS POLICIES
 -- ============================================================
 
--- Profiles
+-- Profiles (uses id = auth.uid(), not user_id)
 CREATE POLICY "Users can view own profile" ON profiles
   FOR SELECT USING (id = auth.uid());
 CREATE POLICY "Users can insert own profile" ON profiles
   FOR INSERT WITH CHECK (id = auth.uid());
 CREATE POLICY "Users can update own profile" ON profiles
   FOR UPDATE USING (id = auth.uid()) WITH CHECK (id = auth.uid());
+CREATE POLICY "Users can delete own profile" ON profiles
+  FOR DELETE USING (id = auth.uid());
 
 -- Transactions
 CREATE POLICY "Users can view own transactions" ON transactions
@@ -306,15 +299,7 @@ CREATE TRIGGER profiles_updated_at
   FOR EACH ROW EXECUTE FUNCTION update_updated_at();
 
 -- ============================================================
--- REALTIME PUBLICATION (for cross-device sync)
+-- REALTIME (safe — uses ON CONFLICT to avoid dup errors)
 -- ============================================================
--- Add tables to Supabase realtime publication
-ALTER PUBLICATION supabase_realtime ADD TABLE transactions;
-ALTER PUBLICATION supabase_realtime ADD TABLE shifts;
-ALTER PUBLICATION supabase_realtime ADD TABLE recurring;
-ALTER PUBLICATION supabase_realtime ADD TABLE budgets;
-ALTER PUBLICATION supabase_realtime ADD TABLE savings_goals;
-ALTER PUBLICATION supabase_realtime ADD TABLE ious;
-ALTER PUBLICATION supabase_realtime ADD TABLE accounts;
-ALTER PUBLICATION supabase_realtime ADD TABLE members;
-ALTER PUBLICATION supabase_realtime ADD TABLE profiles;
+-- First remove all tables from publication, then re-add
+ALTER PUBLICATION supabase_realtime SET TABLE transactions, shifts, recurring, budgets, savings_goals, ious, accounts, members, profiles;
