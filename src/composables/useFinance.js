@@ -499,9 +499,28 @@ const currentBalance = computed(() =>
   safeNum(totalIncome.value - totalExpenses.value - totalSavings.value)
 )
 
-const pendingIncome = computed(() => futureShiftIncome.value)
+// Account-based balance (source of truth when accounts exist)
+const globalBalance = computed(() => {
+  if (state.accounts.length > 0) {
+    return safeNum(accountBalances.value.reduce((sum, acc) => sum + acc.balance, 0))
+  }
+  return currentBalance.value
+})
 
-const balance = computed(() => currentBalance.value)
+// Shift income whose pay_date hasn't arrived yet (period mode only)
+const pendingShiftIncome = computed(() => {
+  if (state.settings.paycheckMode !== 'period') return 0
+  const todayStr = today()
+  return Math.round(
+    (paycheckSummary.value.groups || [])
+      .filter(g => g.payDate > todayStr)
+      .reduce((sum, g) => sum + g.totalAmount, 0) * 100
+  ) / 100
+})
+
+const pendingIncome = computed(() => pendingShiftIncome.value)
+
+const balance = computed(() => globalBalance.value)
 
 // ============================================================
 // FORECAST ENGINE
@@ -804,6 +823,8 @@ function addRecurring(item) {
     day: item.day || null,
     day_of_week: item.day_of_week || null,
     active: true,
+    accountId: item.accountId || null,
+    goalId: item.goalId || null,
   }
   state.recurring.push(entry)
   if (_userId) storage.insertRecurring(_userId, entry).catch(err => trackDbError('DB', err))
@@ -979,10 +1000,19 @@ function autoGenerateRecurring() {
               label: rec.name,
               date: dateStr,
               note: 'Auto-generated',
+              accountId: rec.accountId || state.settings.activeAccountId || null,
               isRecurringRef: rec.id,
             }
             state.transactions.push(item)
             if (_userId) storage.insertTransaction(_userId, item).catch(err => trackDbError('DB', err))
+            // If this saving is linked to a goal, credit it
+            if (rec.type === 'saving' && rec.goalId) {
+              const goal = state.savingsGoals.find(g => g.id === rec.goalId)
+              if (goal) {
+                goal.saved = Math.min(goal.target, safeNum(goal.saved) + rec.amount)
+                if (_userId) storage.updateSavingsGoal(_userId, goal.id, { saved: goal.saved }).catch(err => trackDbError('DB', err))
+              }
+            }
           }
         }
         d.setDate(d.getDate() + 1)
@@ -991,6 +1021,35 @@ function autoGenerateRecurring() {
   
   state.lastRecurringGen = todayStr
   if (_userId) storage.upsertProfile(_userId, state.settings).catch(err => trackDbError('DB', err))
+}
+
+/**
+ * Convert realized shift pay periods into income transactions.
+ * Only runs in 'period' mode. Uses isRecurringRef = 'shift:<group.key>'
+ * as an idempotency marker so transactions are never duplicated.
+ */
+function processShiftPayments() {
+  if (state.settings.paycheckMode !== 'period') return
+  const todayStr = today()
+  const accId = state.settings.activeAccountId
+
+  ;(paycheckSummary.value.groups || [])
+    .filter(g => g.payDate <= todayStr && g.totalAmount > 0)
+    .forEach(group => {
+      const refKey = `shift:${group.key}`
+      if (state.transactions.some(t => t.isRecurringRef === refKey)) return
+      addTransaction({
+        type: 'income',
+        label: `Paycheck · ${group.label}`,
+        amount: group.totalAmount,
+        currency: state.settings.baseCurrency,
+        category: 'Income',
+        date: group.payDate,
+        accountId: accId,
+        note: `Auto-generated from ${group.shiftCount} shift(s)`,
+        isRecurringRef: refKey,
+      })
+    })
 }
 
 // ============================================================
@@ -1465,7 +1524,9 @@ export function useFinance() {
     // Computed - Balance
     balance,
     currentBalance,
+    globalBalance,
     pendingIncome,
+    pendingShiftIncome,
     totalIncome,
     totalExpenses,
     totalSavings,
@@ -1523,6 +1584,7 @@ export function useFinance() {
     addRecurring,
     toggleRecurring,
     autoGenerateRecurring,
+    processShiftPayments,
 
     // Actions - Budgets
     setBudget,

@@ -146,6 +146,8 @@ export async function loadAllData(userId) {
         day: r.day,
         day_of_week: r.day_of_week,
         active: r.active,
+        accountId: r.account_id || null,
+        goalId: r.goal_id || null,
       })),
       budgets: (budgets || []).map(b => ({
         id: b.id,
@@ -334,6 +336,8 @@ export async function insertRecurring(userId, item) {
     day: item.day || null,
     day_of_week: item.day_of_week || null,
     active: true,
+    account_id: item.accountId || null,
+    goal_id: item.goalId || null,
   }).select().single()
 
   if (err) handleError('Insert Recurring', err)
@@ -350,6 +354,8 @@ export async function updateRecurring(userId, id, updates) {
   if (updates.day !== undefined) row.day = updates.day
   if (updates.day_of_week !== undefined) row.day_of_week = updates.day_of_week
   if (updates.active !== undefined) row.active = updates.active
+  if (updates.accountId !== undefined) row.account_id = updates.accountId
+  if (updates.goalId !== undefined) row.goal_id = updates.goalId
 
   const { error: err } = await supabase.from('recurring')
     .update(row)

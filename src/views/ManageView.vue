@@ -91,7 +91,7 @@ function calcShiftHours(s) {
 
 // ── Recurring ────────────────────────────────────────
 const showRecurringForm = ref(false)
-const recurringForm = ref({ name: '', amount: 0, type: 'expense', frequency: 'monthly', day: 1, day_of_week: 'Thursday' })
+const recurringForm = ref({ name: '', amount: 0, type: 'expense', frequency: 'monthly', day: 1, day_of_week: 'Thursday', accountId: null, goalId: null })
 
 function handleAddRecurring() {
   if (!recurringForm.value.name || !recurringForm.value.amount) return
@@ -100,7 +100,7 @@ function handleAddRecurring() {
   else form.day_of_week = null
   addRecurring(form)
   showRecurringForm.value = false
-  recurringForm.value = { name: '', amount: 0, type: 'expense', frequency: 'monthly', day: 1, day_of_week: 'Thursday' }
+  recurringForm.value = { name: '', amount: 0, type: 'expense', frequency: 'monthly', day: 1, day_of_week: 'Thursday', accountId: null, goalId: null }
 }
 
 // ── Budgets ──────────────────────────────────────────
@@ -426,6 +426,25 @@ function dueBadge(iou) {
             <option v-for="d in ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday']" :key="d" :value="d">{{ d }}</option>
           </select>
         </div>
+
+        <!-- Saving-specific: account source + goal target -->
+        <template v-if="recurringForm.type === 'saving'">
+          <div v-if="state.accounts.length">
+            <label class="text-[10px] text-text-secondary block mb-1">Deduct from account</label>
+            <select v-model="recurringForm.accountId" class="w-full bg-surface border border-border rounded-xl px-3 py-2.5 text-sm text-text-primary focus:outline-none focus:border-primary/50">
+              <option :value="null">— Any account —</option>
+              <option v-for="acc in state.accounts" :key="acc.id" :value="acc.id">{{ acc.icon }} {{ acc.name }}</option>
+            </select>
+          </div>
+          <div v-if="state.savingsGoals.length">
+            <label class="text-[10px] text-text-secondary block mb-1">Contribute to goal</label>
+            <select v-model="recurringForm.goalId" class="w-full bg-surface border border-border rounded-xl px-3 py-2.5 text-sm text-text-primary focus:outline-none focus:border-primary/50">
+              <option :value="null">— No goal —</option>
+              <option v-for="g in state.savingsGoals" :key="g.id" :value="g.id">{{ g.icon }} {{ g.name }}</option>
+            </select>
+          </div>
+        </template>
+
         <button class="w-full bg-primary text-white font-semibold py-2.5 rounded-xl text-sm" @click="handleAddRecurring">Add Recurring</button>
       </div>
 

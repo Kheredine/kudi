@@ -18,7 +18,7 @@ const {
   state, balance, totalIncome, totalExpenses, totalSavings,
   daysUntilPayday, insights, forecast, lowestBalancePoint, avgDailySpend,
   budgetStatus, savingsGoalStatus, upcomingBills, autoGenerateRecurring,
-  getCurrencySymbol
+  processShiftPayments, getCurrencySymbol
 } = useFinance()
 
 const { aiInsights, aiLoading, fetchInsights } = useAIInsights()
@@ -38,6 +38,7 @@ const displayInsights = computed(() => {
 onMounted(() => {
   fetchInsights()
   autoGenerateRecurring()
+  processShiftPayments()
 })
 
 function fmt(n) {
