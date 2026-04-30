@@ -36,6 +36,14 @@ self.addEventListener('fetch', (event) => {
   // Skip chrome-extension and other non-http
   if (!url.protocol.startsWith('http')) return
 
+  // SPA navigation: always serve index.html
+  if (request.mode === 'navigate') {
+    event.respondWith(
+      caches.match('/index.html').then((cached) => cached || fetch(request))
+    )
+    return
+  }
+
   // API calls: network first
   if (url.pathname.startsWith('/rest') || url.hostname.includes('supabase')) {
     event.respondWith(

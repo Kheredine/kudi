@@ -6,7 +6,7 @@ import { ref, computed, watch } from 'vue'
 
 const CACHE_KEY = 'kudi-fx-cache'
 const REFRESH_INTERVAL = 15 * 60 * 1000 // 15 minutes
-const RATE_MAX = 10000
+const RATE_MAX = 100_000_000
 const RATE_MIN = 0
 
 const PRIMARY_API = 'https://open.er-api.com/v6/latest'
@@ -323,7 +323,9 @@ function convert(amountVal, from, to) {
   const toRate = rates.value[to]
 
   if (!fromRate || !toRate) {
-    console.warn(`[Kudi FX] Missing rate for ${from} (${fromRate}) or ${to} (${toRate})`)
+    if (ratesLoaded.value) {
+      console.warn(`[Kudi FX] Missing rate for ${from} (${fromRate}) or ${to} (${toRate})`)
+    }
     return 0
   }
 
@@ -339,9 +341,6 @@ function convert(amountVal, from, to) {
     // Cross: (amount / rates[from]) × rates[to]
     result = (numAmount / fromRate) * toRate
   }
-
-  // Log for debugging
-  console.log(`[Kudi FX] ${numAmount} ${from} → ${to} = ${result.toFixed(4)} (via ${baseCurrency.value}, fromRate=${fromRate}, toRate=${toRate})`)
 
   return result
 }
