@@ -19,8 +19,8 @@ async function handleSubmit() {
     localError.value = 'Please enter your username'
     return
   }
-  if (!passcode.value) {
-    localError.value = 'Please enter your passcode'
+  if (!passcode.value || passcode.value.length !== 6) {
+    localError.value = 'Passcode must be 6 digits'
     return
   }
 
@@ -80,9 +80,13 @@ async function handleSubmit() {
             <input
               v-model="passcode"
               type="password"
-              placeholder="Enter your passcode"
+              inputmode="numeric"
+              pattern="[0-9]*"
+              maxlength="6"
+              placeholder="Enter 6-digit passcode"
               autocomplete="current-password"
-              class="w-full bg-surface border border-border rounded-xl px-4 py-3.5 text-sm text-text-primary placeholder:text-text-secondary/50 focus:outline-none focus:border-primary/50 transition-colors"
+              class="w-full bg-surface border border-border rounded-xl px-4 py-3.5 text-sm text-text-primary placeholder:text-text-secondary/50 focus:outline-none focus:border-primary/50 transition-colors tracking-[0.5em]"
+              @input="passcode = passcode.replace(/[^0-9]/g, '').slice(0, 6)"
             />
           </div>
 
