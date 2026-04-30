@@ -506,16 +506,29 @@ function handleAddGoal() {
             @input="updateSettings({ userName: $event.target.value })"
           />
         </div>
-        <div>
-          <label class="text-xs font-medium text-text-secondary mb-1.5 block">Payday (day of month)</label>
-          <input
-            :value="state.settings.paydayDay"
-            type="number"
-            min="1"
-            max="31"
-            class="w-full bg-surface border border-border rounded-xl px-4 py-3 text-sm text-text-primary focus:outline-none focus:border-primary/50"
-            @input="updateSettings({ paydayDay: parseInt($event.target.value) || 25 })"
-          />
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="text-xs font-medium text-text-secondary mb-1.5 block">1st Payday (day of month)</label>
+            <input
+              :value="state.settings.payday1 || 10"
+              type="number"
+              min="1"
+              max="31"
+              class="w-full bg-surface border border-border rounded-xl px-4 py-3 text-sm text-text-primary focus:outline-none focus:border-primary/50"
+              @input="updateSettings({ payday1: parseInt($event.target.value) || 10 })"
+            />
+          </div>
+          <div>
+            <label class="text-xs font-medium text-text-secondary mb-1.5 block">2nd Payday (day of month)</label>
+            <input
+              :value="state.settings.payday2 || 25"
+              type="number"
+              min="1"
+              max="31"
+              class="w-full bg-surface border border-border rounded-xl px-4 py-3 text-sm text-text-primary focus:outline-none focus:border-primary/50"
+              @input="updateSettings({ payday2: parseInt($event.target.value) || 25 })"
+            />
+          </div>
         </div>
         <div>
           <label class="text-xs font-medium text-text-secondary mb-1.5 block">Base Currency</label>

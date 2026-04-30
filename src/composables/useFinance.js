@@ -89,6 +89,9 @@ function createDefaultState() {
     settings: {
       baseCurrency: 'RUB',
       paydayDay: 25,
+      payday1: 10,
+      payday2: 25,
+      paydayDateOverrides: {},
       userName: '',
       language: 'en',
       theme: 'dark',
@@ -101,6 +104,7 @@ function createDefaultState() {
     recurring: [],
     budgets: [],
     savingsGoals: [],
+    ious: [],
     lastRecurringGen: null,
   }
 }
@@ -160,11 +164,27 @@ function calculateShiftIncome(shift) {
 
 function getPayPeriod(dateStr) {
   const d = new Date(dateStr + 'T00:00:00')
+  const year = d.getFullYear()
+  const month = d.getMonth()
   const day = d.getDate()
-  if (day <= 15) {
-    return { period: 'first', payDate: toDateStr(new Date(d.getFullYear(), d.getMonth(), state.settings.paydayDay)) }
+  const p1 = state.settings.payday1 || 10
+  const p2 = state.settings.payday2 || 25
+
+  let payDate
+  if (day <= p1) {
+    payDate = new Date(year, month, p1)
+  } else if (day <= p2) {
+    payDate = new Date(year, month, p2)
   } else {
-    return { period: 'second', payDate: toDateStr(new Date(d.getFullYear(), d.getMonth() + 1, 10)) }
+    payDate = new Date(year, month + 1, p1)
+  }
+
+  const payDateStr = toDateStr(payDate)
+  const overrideDate = state.settings.paydayDateOverrides?.[payDateStr]
+  return {
+    period: payDateStr,
+    payDate: overrideDate || payDateStr,
+    defaultPayDate: payDateStr,
   }
 }
 
@@ -189,6 +209,105 @@ const futureShiftIncome = computed(() => {
     .filter((s) => s.date > todayStr)
     .reduce((sum, s) => sum + s.calculated_income, 0)
 })
+
+const paydayGroups = computed(() => {
+  const todayStr = today()
+  const groups = {}
+
+  shiftIncomes.value.forEach((shift) => {
+    const key = shift.pay_period
+    if (!groups[key]) {
+      groups[key] = {
+        defaultPayDate: key,
+        payDate: shift.pay_date,
+        shifts: [],
+        totalHours: 0,
+        totalIncome: 0,
+      }
+    }
+    groups[key].shifts.push(shift)
+    groups[key].totalHours += shift.calculated_hours
+    groups[key].totalIncome += shift.calculated_income
+  })
+
+  return Object.values(groups)
+    .map((g) => ({
+      ...g,
+      totalHours: Math.round(g.totalHours * 100) / 100,
+      totalIncome: Math.round(g.totalIncome * 100) / 100,
+      isPast: g.payDate < todayStr,
+      shiftCount: g.shifts.length,
+    }))
+    .sort((a, b) => a.payDate.localeCompare(b.payDate))
+})
+
+// ============================================================
+// IOU ENGINE
+// ============================================================
+
+const iouSummary = computed(() => {
+  const todayStr = today()
+  return (state.ious || [])
+    .map((iou) => {
+      const daysElapsed = Math.max(0, daysBetween(iou.dateLent, todayStr))
+      const interest = (iou.interestRate || 0) > 0
+        ? iou.amount * (iou.interestRate / 100) * (daysElapsed / 365)
+        : 0
+      const totalDue = iou.amount + interest
+      const isOverdue = iou.dueDate && iou.dueDate < todayStr && !iou.paid
+      const daysUntilDue = iou.dueDate ? daysBetween(todayStr, iou.dueDate) : null
+      return {
+        ...iou,
+        daysElapsed,
+        interest: Math.round(interest * 100) / 100,
+        totalDue: Math.round(totalDue * 100) / 100,
+        isOverdue,
+        daysUntilDue,
+      }
+    })
+    .sort((a, b) => {
+      if (a.paid !== b.paid) return a.paid ? 1 : -1
+      if (a.isOverdue !== b.isOverdue) return a.isOverdue ? -1 : 1
+      return (a.dueDate || '').localeCompare(b.dueDate || '')
+    })
+})
+
+function addIOU(iou) {
+  if (!iou.person || !iou.person.trim()) return { success: false, errors: ['Person name is required'] }
+  if (!iou.amount || Number(iou.amount) <= 0) return { success: false, errors: ['Amount must be greater than 0'] }
+  if (!state.ious) state.ious = []
+  state.ious.push({
+    id: nextId(),
+    person: iou.person.trim(),
+    amount: Number(iou.amount),
+    dateLent: iou.dateLent || today(),
+    dueDate: iou.dueDate || null,
+    interestRate: Number(iou.interestRate || 0),
+    notes: iou.notes || '',
+    paid: false,
+  })
+  return { success: true, errors: [] }
+}
+
+function updateIOU(id, updates) {
+  const item = (state.ious || []).find((i) => i.id === id)
+  if (item) Object.assign(item, updates)
+}
+
+function deleteIOU(id) {
+  if (!state.ious) return
+  const idx = state.ious.findIndex((i) => i.id === id)
+  if (idx > -1) state.ious.splice(idx, 1)
+}
+
+function setPaydayOverride(defaultDate, overrideDate) {
+  if (!state.settings.paydayDateOverrides) state.settings.paydayDateOverrides = {}
+  if (overrideDate) {
+    state.settings.paydayDateOverrides[defaultDate] = overrideDate
+  } else {
+    delete state.settings.paydayDateOverrides[defaultDate]
+  }
+}
 
 // ============================================================
 // RECURRING ENGINE
@@ -1174,6 +1293,10 @@ export function useFinance() {
     // Computed - Shifts
     shiftIncomes,
     futureShiftIncome,
+    paydayGroups,
+
+    // Computed - IOUs
+    iouSummary,
 
     // Computed - Forecast
     forecast,
@@ -1204,6 +1327,12 @@ export function useFinance() {
     addShift,
     deleteShift,
     updateShift,
+
+    // Actions - IOUs
+    addIOU,
+    updateIOU,
+    deleteIOU,
+    setPaydayOverride,
 
     // Actions - Recurring
     addRecurring,
