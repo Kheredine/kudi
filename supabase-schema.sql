@@ -55,7 +55,7 @@ CREATE TABLE transactions (
   note TEXT DEFAULT '',
   account_id BIGINT,
   member_id BIGINT,
-  recurring_ref BIGINT,
+  recurring_ref TEXT,
   created_at TIMESTAMPTZ DEFAULT now()
 );
 
@@ -162,6 +162,26 @@ CREATE TABLE members (
 );
 
 -- ============================================================
+-- FUTURE INCOME (unified incoming money timeline)
+-- ============================================================
+CREATE TABLE future_income (
+  id BIGSERIAL PRIMARY KEY,
+  user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  type TEXT NOT NULL DEFAULT 'custom' CHECK (type IN ('salary', 'debt', 'gift', 'scholarship', 'custom')),
+  title TEXT NOT NULL,
+  amount NUMERIC(12,2) NOT NULL DEFAULT 0,
+  currency TEXT DEFAULT 'USD',
+  due_date DATE NOT NULL,
+  source TEXT DEFAULT '',
+  ref_key TEXT DEFAULT NULL,
+  account_id BIGINT REFERENCES accounts(id) ON DELETE SET NULL,
+  status TEXT NOT NULL DEFAULT 'upcoming' CHECK (status IN ('upcoming', 'received')),
+  received_at DATE DEFAULT NULL,
+  meta JSONB DEFAULT '{}',
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+
+-- ============================================================
 -- INDEXES for fast queries
 -- ============================================================
 CREATE INDEX idx_transactions_user ON transactions(user_id);
@@ -174,6 +194,8 @@ CREATE INDEX idx_savings_goals_user ON savings_goals(user_id);
 CREATE INDEX idx_ious_user ON ious(user_id);
 CREATE INDEX idx_accounts_user ON accounts(user_id);
 CREATE INDEX idx_members_user ON members(user_id);
+CREATE INDEX idx_future_income_user ON future_income(user_id, status);
+CREATE UNIQUE INDEX idx_future_income_ref ON future_income(user_id, ref_key) WHERE ref_key IS NOT NULL;
 
 -- ============================================================
 -- ROW LEVEL SECURITY (RLS)
@@ -189,6 +211,7 @@ ALTER TABLE savings_goals ENABLE ROW LEVEL SECURITY;
 ALTER TABLE ious ENABLE ROW LEVEL SECURITY;
 ALTER TABLE accounts ENABLE ROW LEVEL SECURITY;
 ALTER TABLE members ENABLE ROW LEVEL SECURITY;
+ALTER TABLE future_income ENABLE ROW LEVEL SECURITY;
 
 -- ============================================================
 -- RLS POLICIES
@@ -282,6 +305,16 @@ CREATE POLICY "Users can insert own members" ON members
 CREATE POLICY "Users can update own members" ON members
   FOR UPDATE USING (user_id = auth.uid()) WITH CHECK (user_id = auth.uid());
 CREATE POLICY "Users can delete own members" ON members
+  FOR DELETE USING (user_id = auth.uid());
+
+-- Future Income
+CREATE POLICY "Users can view own future_income" ON future_income
+  FOR SELECT USING (user_id = auth.uid());
+CREATE POLICY "Users can insert own future_income" ON future_income
+  FOR INSERT WITH CHECK (user_id = auth.uid());
+CREATE POLICY "Users can update own future_income" ON future_income
+  FOR UPDATE USING (user_id = auth.uid()) WITH CHECK (user_id = auth.uid());
+CREATE POLICY "Users can delete own future_income" ON future_income
   FOR DELETE USING (user_id = auth.uid());
 
 -- ============================================================

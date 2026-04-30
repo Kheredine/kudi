@@ -100,6 +100,15 @@ export async function loadAllData(userId) {
 
     if (memErr) handleError('Load Members', memErr)
 
+    // Load future income
+    const { data: futureIncomes, error: fiErr } = await supabase
+      .from('future_income')
+      .select('*')
+      .eq('user_id', userId)
+      .order('due_date', { ascending: true })
+
+    if (fiErr) handleError('Load FutureIncomes', fiErr)
+
     return {
       settings: profile ? {
         userName: profile.user_name,
@@ -126,7 +135,9 @@ export async function loadAllData(userId) {
         note: t.note || '',
         accountId: t.account_id,
         memberId: t.member_id,
-        isRecurringRef: t.recurring_ref,
+        isRecurringRef: t.recurring_ref
+          ? (isNaN(t.recurring_ref) ? t.recurring_ref : Number(t.recurring_ref))
+          : null,
       })),
       shifts: (shifts || []).map(s => ({
         id: s.id,
@@ -192,6 +203,21 @@ export async function loadAllData(userId) {
         role: m.role,
         joinedAt: m.joined_at,
       })),
+      futureIncomes: (futureIncomes || []).map(fi => ({
+        id: fi.id,
+        type: fi.type,
+        title: fi.title,
+        amount: Number(fi.amount),
+        currency: fi.currency,
+        dueDate: fi.due_date,
+        source: fi.source || '',
+        refKey: fi.ref_key || null,
+        accountId: fi.account_id || null,
+        status: fi.status,
+        receivedAt: fi.received_at || null,
+        meta: fi.meta || {},
+        createdAt: fi.created_at,
+      })),
       lastRecurringGen: profile?.last_recurring_gen || null,
     }
   } catch (err) {
@@ -242,7 +268,7 @@ export async function insertTransaction(userId, txn) {
     note: txn.note || '',
     account_id: txn.accountId || null,
     member_id: txn.memberId || null,
-    recurring_ref: txn.isRecurringRef || null,
+    recurring_ref: txn.isRecurringRef != null ? String(txn.isRecurringRef) : null,
   }).select().single()
 
   if (err) handleError('Insert Transaction', err)
@@ -820,6 +846,74 @@ export function subscribeToChanges(userId, callbacks) {
   return () => {
     supabase.removeChannel(channel)
   }
+}
+
+// ============================================================
+// FUTURE INCOME
+// ============================================================
+
+export async function insertFutureIncome(userId, item) {
+  const { data, error: err } = await supabase.from('future_income').insert({
+    user_id: userId,
+    type: item.type || 'custom',
+    title: item.title,
+    amount: item.amount,
+    currency: item.currency || 'USD',
+    due_date: item.dueDate,
+    source: item.source || '',
+    ref_key: item.refKey || null,
+    account_id: item.accountId || null,
+    status: item.status || 'upcoming',
+    received_at: item.receivedAt || null,
+    meta: item.meta || {},
+  }).select().single()
+  if (err) handleError('Insert FutureIncome', err)
+  return data
+}
+
+export async function upsertFutureIncomeByRefKey(userId, item) {
+  const { data, error: err } = await supabase.from('future_income').upsert({
+    user_id: userId,
+    type: item.type || 'custom',
+    title: item.title,
+    amount: item.amount,
+    currency: item.currency || 'USD',
+    due_date: item.dueDate,
+    source: item.source || '',
+    ref_key: item.refKey,
+    account_id: item.accountId || null,
+    status: item.status || 'upcoming',
+    received_at: item.receivedAt || null,
+    meta: item.meta || {},
+  }, { onConflict: 'user_id,ref_key' }).select().single()
+  if (err) handleError('Upsert FutureIncome', err)
+  return data
+}
+
+export async function updateFutureIncome(userId, id, updates) {
+  const row = {}
+  if (updates.type !== undefined) row.type = updates.type
+  if (updates.title !== undefined) row.title = updates.title
+  if (updates.amount !== undefined) row.amount = updates.amount
+  if (updates.dueDate !== undefined) row.due_date = updates.dueDate
+  if (updates.source !== undefined) row.source = updates.source
+  if (updates.status !== undefined) row.status = updates.status
+  if (updates.receivedAt !== undefined) row.received_at = updates.receivedAt
+  if (updates.accountId !== undefined) row.account_id = updates.accountId
+  if (updates.meta !== undefined) row.meta = updates.meta
+  const { error: err } = await supabase.from('future_income')
+    .update(row)
+    .eq('id', id)
+    .eq('user_id', userId)
+  if (err) handleError('Update FutureIncome', err)
+}
+
+export async function deleteFutureIncome(userId, id) {
+  const { error: err } = await supabase.from('future_income')
+    .delete()
+    .eq('id', id)
+    .eq('user_id', userId)
+  if (err) handleError('Delete FutureIncome', err)
 }
 
 // ============================================================

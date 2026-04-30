@@ -18,7 +18,8 @@ const {
   state, balance, totalIncome, totalExpenses, totalSavings,
   daysUntilPayday, insights, forecast, lowestBalancePoint, avgDailySpend,
   budgetStatus, savingsGoalStatus, upcomingBills, autoGenerateRecurring,
-  processShiftPayments, getCurrencySymbol
+  syncShiftIncomes, processReceivedPayments, nearestIncome, getCurrencySymbol,
+  INCOME_TYPE_META,
 } = useFinance()
 
 const { aiInsights, aiLoading, fetchInsights } = useAIInsights()
@@ -38,8 +39,18 @@ const displayInsights = computed(() => {
 onMounted(() => {
   fetchInsights()
   autoGenerateRecurring()
-  processShiftPayments()
+  syncShiftIncomes()
+  processReceivedPayments()
 })
+
+function daysAway(dateStr) {
+  const today = new Date().toISOString().split('T')[0]
+  const diff = Math.ceil((new Date(dateStr + 'T00:00:00') - new Date(today + 'T00:00:00')) / 86400000)
+  if (diff === 0) return 'Today'
+  if (diff === 1) return 'Tomorrow'
+  if (diff < 0) return `${Math.abs(diff)} days ago`
+  return `In ${diff} days`
+}
 
 function fmt(n) {
   const num = Number(n)
@@ -52,6 +63,29 @@ function fmt(n) {
   <div class="max-w-4xl mx-auto">
     <!-- Balance -->
     <BalanceCard />
+
+    <!-- Nearest Upcoming Income -->
+    <div v-if="nearestIncome" class="px-5 lg:px-8 mb-5">
+      <router-link to="/forecast" class="block">
+        <div class="flex items-center gap-3 bg-primary/5 border border-primary/20 rounded-2xl px-4 py-3 active:scale-[0.99] transition-transform">
+          <div class="w-9 h-9 rounded-xl flex items-center justify-center shrink-0"
+               :class="INCOME_TYPE_META[nearestIncome.type]?.bg || 'bg-primary/10'">
+            <span class="text-lg">{{ INCOME_TYPE_META[nearestIncome.type]?.icon || '💰' }}</span>
+          </div>
+          <div class="flex-1 min-w-0">
+            <p class="text-xs text-text-secondary">Upcoming income</p>
+            <p class="text-sm font-semibold text-text-primary truncate">{{ nearestIncome.title }}</p>
+          </div>
+          <div class="text-right shrink-0">
+            <p class="text-base font-bold text-primary">{{ fmt(nearestIncome.amount) }}</p>
+            <p class="text-[10px] text-text-secondary">{{ daysAway(nearestIncome.dueDate) }}</p>
+          </div>
+          <svg class="w-4 h-4 text-text-secondary shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
+          </svg>
+        </div>
+      </router-link>
+    </div>
 
     <!-- Summary Cards — horizontal scroll on mobile, grid on desktop -->
     <PrivacyOverlay class="px-5 lg:px-8 mb-6 lg:mb-8">

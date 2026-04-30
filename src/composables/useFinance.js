@@ -107,6 +107,7 @@ function createDefaultState() {
     budgets: [],
     savingsGoals: [],
     ious: [],
+    futureIncomes: [],
     lastRecurringGen: null,
   }
 }
@@ -154,6 +155,7 @@ async function initData(userId) {
       state.ious = data.ious || []
       state.accounts = data.accounts || []
       state.members = data.members || []
+      state.futureIncomes = data.futureIncomes || []
       state.lastRecurringGen = data.lastRecurringGen || null
     }
   } catch (err) {
@@ -356,6 +358,149 @@ const paycheckSummary = computed(() => {
 })
 
 // ============================================================
+// FUTURE INCOME (unified income timeline)
+// ============================================================
+
+const INCOME_TYPE_META = {
+  salary:      { label: 'Salary',      icon: '💼', color: 'text-primary',    bg: 'bg-primary/10' },
+  debt:        { label: 'Debt Repay',  icon: '🤝', color: 'text-amber-400',  bg: 'bg-amber-400/10' },
+  gift:        { label: 'Gift',        icon: '🎁', color: 'text-pink-400',   bg: 'bg-pink-400/10' },
+  scholarship: { label: 'Scholarship', icon: '🎓', color: 'text-indigo-400', bg: 'bg-indigo-400/10' },
+  custom:      { label: 'Other',       icon: '💰', color: 'text-emerald-400',bg: 'bg-emerald-400/10' },
+}
+
+const upcomingIncomes = computed(() =>
+  state.futureIncomes
+    .filter(fi => fi.status === 'upcoming')
+    .sort((a, b) => a.dueDate.localeCompare(b.dueDate))
+)
+
+const pastIncomes = computed(() =>
+  state.futureIncomes
+    .filter(fi => fi.status === 'received')
+    .sort((a, b) => b.dueDate.localeCompare(a.dueDate))
+)
+
+const nearestIncome = computed(() => upcomingIncomes.value[0] || null)
+
+function addFutureIncome(item) {
+  const entry = {
+    id: nextId(),
+    type: item.type || 'custom',
+    title: item.title,
+    amount: Number(item.amount) || 0,
+    currency: item.currency || state.settings.baseCurrency,
+    dueDate: item.dueDate,
+    source: item.source || '',
+    refKey: item.refKey || null,
+    accountId: item.accountId || state.settings.activeAccountId || null,
+    status: item.status || 'upcoming',
+    receivedAt: item.receivedAt || null,
+    meta: item.meta || {},
+  }
+  state.futureIncomes.push(entry)
+  if (_userId) {
+    const persist = entry.refKey
+      ? storage.upsertFutureIncomeByRefKey(_userId, entry)
+      : storage.insertFutureIncome(_userId, entry)
+    persist.then(dbRow => { if (dbRow?.id) entry.id = dbRow.id }).catch(err => trackDbError('FutureIncome', err))
+  }
+  return entry
+}
+
+function updateFutureIncome(id, updates) {
+  const fi = state.futureIncomes.find(fi => fi.id === id)
+  if (fi) {
+    Object.assign(fi, updates)
+    if (_userId) storage.updateFutureIncome(_userId, id, updates).catch(err => trackDbError('Update FutureIncome', err))
+  }
+}
+
+function deleteFutureIncome(id) {
+  const idx = state.futureIncomes.findIndex(fi => fi.id === id)
+  if (idx > -1) {
+    state.futureIncomes.splice(idx, 1)
+    if (_userId) storage.deleteFutureIncome(_userId, id).catch(err => trackDbError('Delete FutureIncome', err))
+  }
+}
+
+/**
+ * Idempotently sync shift pay groups → future_income entries.
+ * Respects paycheckMode: uses paycheckSummary in period mode, paydayGroups otherwise.
+ */
+function syncShiftIncomes() {
+  const isPeriodMode = state.settings.paycheckMode === 'period'
+  const groups = isPeriodMode
+    ? (paycheckSummary.value.groups || [])
+    : paydayGroups.value
+
+  groups.forEach(group => {
+    const groupKey = group.key || group.defaultPayDate
+    const refKey = `shift:${groupKey}`
+    const amount = Math.round(((group.totalAmount ?? group.totalIncome) || 0) * 100) / 100
+    const title = group.label
+      ? `Paycheck · ${group.label}`
+      : `Paycheck · ${group.payDate}`
+
+    const existing = state.futureIncomes.find(fi => fi.refKey === refKey)
+    const hasOldTxn = state.transactions.some(t => t.isRecurringRef === refKey)
+
+    if (!existing) {
+      addFutureIncome({
+        type: 'salary',
+        title,
+        amount,
+        dueDate: group.payDate,
+        refKey,
+        status: hasOldTxn ? 'received' : 'upcoming',
+        meta: { shiftCount: group.shiftCount || 0, totalHours: group.totalHours || 0 },
+      })
+    } else if (existing.status !== 'received') {
+      const changed = existing.amount !== amount || existing.title !== title
+      if (changed) {
+        updateFutureIncome(existing.id, {
+          amount,
+          title,
+          meta: { shiftCount: group.shiftCount || 0, totalHours: group.totalHours || 0 },
+        })
+      }
+    }
+  })
+}
+
+/**
+ * Auto-transition upcoming → received when due_date has passed.
+ * Creates an income transaction (idempotent via isRecurringRef).
+ */
+function processReceivedPayments() {
+  const todayStr = today()
+  state.futureIncomes
+    .filter(fi => fi.status === 'upcoming' && fi.dueDate <= todayStr)
+    .forEach(fi => {
+      updateFutureIncome(fi.id, { status: 'received', receivedAt: fi.dueDate })
+
+      // Check both new fi: key and old shift: key to prevent duplicates on migration
+      const alreadyExists = state.transactions.some(t =>
+        t.isRecurringRef === `fi:${fi.id}` ||
+        (fi.refKey && t.isRecurringRef === fi.refKey)
+      )
+      if (!alreadyExists) {
+        addTransaction({
+          type: 'income',
+          label: fi.title,
+          amount: fi.amount,
+          currency: fi.currency || state.settings.baseCurrency,
+          category: 'Income',
+          date: fi.dueDate,
+          accountId: fi.accountId || state.settings.activeAccountId || null,
+          note: 'Auto-generated income',
+          isRecurringRef: `fi:${fi.id}`,
+        })
+      }
+    })
+}
+
+// ============================================================
 // IOU ENGINE
 // ============================================================
 
@@ -530,24 +675,23 @@ function generateForecast(days = 30) {
   const items = []
   let runningBalance = currentBalance.value
   const todayDate = new Date()
-
-  const futureShifts = shiftIncomes.value
-    .filter((s) => s.date > today())
-    .map((s) => ({
-      date: s.date,
-      label: `Shift Income (${s.calculated_hours}h)`,
-      amount: s.calculated_income,
+  // All upcoming income sources (shift salaries + manual entries)
+  const futureIncomesForForecast = upcomingIncomes.value
+    .filter(fi => fi.dueDate <= toDateStr(addDays(todayDate, days)))
+    .map(fi => ({
+      date: fi.dueDate,
+      label: fi.title,
+      amount: fi.amount,
       type: 'income',
-      isShift: true,
+      isFutureIncome: true,
     }))
 
   const recurringInstances = generateRecurringInstances(days)
 
-  const allEvents = [...futureShifts, ...recurringInstances]
+  const allEvents = [...futureIncomesForForecast, ...recurringInstances]
     .sort((a, b) => a.date.localeCompare(b.date))
 
   const cutoff = toDateStr(addDays(todayDate, days))
-
   allEvents
     .filter((e) => e.date <= cutoff)
     .forEach((event) => {
@@ -1021,35 +1165,6 @@ function autoGenerateRecurring() {
   
   state.lastRecurringGen = todayStr
   if (_userId) storage.upsertProfile(_userId, state.settings).catch(err => trackDbError('DB', err))
-}
-
-/**
- * Convert realized shift pay periods into income transactions.
- * Only runs in 'period' mode. Uses isRecurringRef = 'shift:<group.key>'
- * as an idempotency marker so transactions are never duplicated.
- */
-function processShiftPayments() {
-  if (state.settings.paycheckMode !== 'period') return
-  const todayStr = today()
-  const accId = state.settings.activeAccountId
-
-  ;(paycheckSummary.value.groups || [])
-    .filter(g => g.payDate <= todayStr && g.totalAmount > 0)
-    .forEach(group => {
-      const refKey = `shift:${group.key}`
-      if (state.transactions.some(t => t.isRecurringRef === refKey)) return
-      addTransaction({
-        type: 'income',
-        label: `Paycheck · ${group.label}`,
-        amount: group.totalAmount,
-        currency: state.settings.baseCurrency,
-        category: 'Income',
-        date: group.payDate,
-        accountId: accId,
-        note: `Auto-generated from ${group.shiftCount} shift(s)`,
-        isRecurringRef: refKey,
-      })
-    })
 }
 
 // ============================================================
@@ -1580,11 +1695,21 @@ export function useFinance() {
     deleteIOU,
     setPaydayOverride,
 
+    // Future Income
+    upcomingIncomes,
+    pastIncomes,
+    nearestIncome,
+    INCOME_TYPE_META,
+    addFutureIncome,
+    updateFutureIncome,
+    deleteFutureIncome,
+    syncShiftIncomes,
+    processReceivedPayments,
+
     // Actions - Recurring
     addRecurring,
     toggleRecurring,
     autoGenerateRecurring,
-    processShiftPayments,
 
     // Actions - Budgets
     setBudget,

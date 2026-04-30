@@ -50,6 +50,12 @@ const routes = [
     component: () => import('../views/ProfileView.vue'),
     meta: { requiresAuth: true },
   },
+  {
+    path: '/income-history',
+    name: 'IncomeHistory',
+    component: () => import('../views/IncomeHistoryView.vue'),
+    meta: { requiresAuth: true },
+  },
 ]
 
 const router = createRouter({
