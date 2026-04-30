@@ -13,7 +13,7 @@ import InstallPrompt from './components/InstallPrompt.vue'
 
 const router = useRouter()
 const route = useRoute()
-const { initData, dataLoaded, autoGenerateRecurring, applyTheme } = useFinance()
+const { initData, dataLoaded, autoGenerateRecurring, applyTheme, lastDbError } = useFinance()
 const showAddModal = ref(false)
 const appReady = ref(false)
 
@@ -88,6 +88,16 @@ onUnmounted(() => {
 
   <!-- Main app -->
   <div v-else class="min-h-screen bg-bg">
+    <!-- Global DB error banner -->
+    <transition name="fade">
+      <div
+        v-if="lastDbError && !isAuthRoute"
+        class="fixed top-0 left-0 right-0 z-[100] bg-red-500/90 text-white text-xs text-center py-2 px-4 backdrop-blur-sm"
+      >
+        ⚠️ Save failed: {{ lastDbError.message }}
+      </div>
+    </transition>
+
     <!-- Side nav (desktop only) -->
     <SideNav v-if="!isAuthRoute" />
 

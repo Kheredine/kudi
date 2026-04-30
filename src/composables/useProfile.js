@@ -85,10 +85,6 @@ async function updateProfile(updates) {
   const { data: { user: authUser } } = await supabase.auth.getUser()
   if (!authUser) return { success: false, error: 'Not authenticated' }
 
-  // Optimistic UI update
-  if (updates.username !== undefined) profile.value.username = updates.username
-  if (updates.avatar !== undefined) profile.value.avatar = updates.avatar
-
   const patch = {}
   if (updates.username !== undefined) patch.user_name = updates.username
   if (updates.avatar !== undefined) patch.avatar = updates.avatar
@@ -100,10 +96,12 @@ async function updateProfile(updates) {
 
   if (error) {
     console.error('[Profile] update error:', error.message)
-    // Revert on error
-    await fetchProfile(authUser.id)
     return { success: false, error: error.message }
   }
+
+  // Update local state ONLY after successful DB write
+  if (updates.username !== undefined) profile.value.username = updates.username
+  if (updates.avatar !== undefined) profile.value.avatar = updates.avatar
 
   return { success: true }
 }

@@ -42,7 +42,11 @@ async function saveUsername() {
 
 async function selectAvatar(avatarId) {
   if (avatarId === profile.value.avatar) return
-  await updateProfile({ avatar: avatarId })
+  const result = await updateProfile({ avatar: avatarId })
+  if (!result.success) {
+    saveMsg.value = result.error || 'Failed to save avatar'
+    setTimeout(() => { saveMsg.value = '' }, 3000)
+  }
 }
 
 async function handleLogout() {

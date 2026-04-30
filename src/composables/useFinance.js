@@ -118,7 +118,20 @@ const state = reactive(rawState)
 
 // Supabase state tracking
 const dataLoaded = ref(false)
+const lastDbError = ref(null)
 let _userId = null
+
+/** Track Supabase errors so the UI can display them */
+function trackDbError(operation, err) {
+  const msg = err?.message || String(err)
+  console.error(`[Supabase ${operation}]`, msg)
+  const time = Date.now()
+  lastDbError.value = { operation, message: msg, time }
+  // Auto-clear after 5 seconds
+  setTimeout(() => {
+    if (lastDbError.value?.time === time) lastDbError.value = null
+  }, 5000)
+}
 
 /**
  * Initialize data from Supabase. Called once after auth.
@@ -316,7 +329,7 @@ function addIOU(iou) {
     paid: false,
   }
   state.ious.push(item)
-  if (_userId) storage.insertIOU(_userId, item).catch(err => console.warn('[Supabase]', err.message))
+  if (_userId) storage.insertIOU(_userId, item).catch(err => trackDbError('Insert IOU', err))
   return { success: true, errors: [] }
 }
 
@@ -324,7 +337,7 @@ function updateIOU(id, updates) {
   const item = (state.ious || []).find((i) => i.id === id)
   if (item) {
     Object.assign(item, updates)
-    if (_userId) storage.updateIOU(_userId, id, updates).catch(err => console.warn('[Supabase]', err.message))
+    if (_userId) storage.updateIOU(_userId, id, updates).catch(err => trackDbError('Update IOU', err))
   }
 }
 
@@ -333,7 +346,7 @@ function deleteIOU(id) {
   const idx = state.ious.findIndex((i) => i.id === id)
   if (idx > -1) {
     state.ious.splice(idx, 1)
-    if (_userId) storage.deleteIOU(_userId, id).catch(err => console.warn('[Supabase]', err.message))
+    if (_userId) storage.deleteIOU(_userId, id).catch(err => trackDbError('Delete IOU', err))
   }
 }
 
@@ -620,7 +633,7 @@ function addTransaction(transaction) {
     isRecurringRef: transaction.isRecurringRef || null,
   }
   state.transactions.unshift(item)
-  if (_userId) storage.insertTransaction(_userId, item).catch(err => console.warn('[Supabase]', err.message))
+  if (_userId) storage.insertTransaction(_userId, item).catch(err => trackDbError('Insert Transaction', err))
   return { success: true, errors: [] }
 }
 
@@ -628,7 +641,7 @@ function deleteTransaction(id) {
   const idx = state.transactions.findIndex((t) => t.id === id)
   if (idx > -1) {
     state.transactions.splice(idx, 1)
-    if (_userId) storage.deleteTransaction(_userId, id).catch(err => console.warn('[Supabase]', err.message))
+    if (_userId) storage.deleteTransaction(_userId, id).catch(err => trackDbError('Delete Transaction', err))
   }
 }
 
@@ -639,7 +652,7 @@ function updateTransaction(id, updates) {
     const errors = validateTransaction(merged)
     if (errors.length > 0) return { success: false, errors }
     Object.assign(t, updates)
-    if (_userId) storage.updateTransaction(_userId, id, updates).catch(err => console.warn('[Supabase]', err.message))
+    if (_userId) storage.updateTransaction(_userId, id, updates).catch(err => trackDbError('Update Transaction', err))
     return { success: true, errors: [] }
   }
   return { success: false, errors: ['Transaction not found'] }
@@ -658,7 +671,7 @@ function toggleRecurring(id) {
   const item = state.recurring.find((r) => r.id === id)
   if (item) {
     item.active = !item.active
-    if (_userId) storage.updateRecurring(_userId, id, { active: item.active }).catch(err => console.warn('[Supabase]', err.message))
+    if (_userId) storage.updateRecurring(_userId, id, { active: item.active }).catch(err => trackDbError('DB', err))
   }
 }
 
@@ -675,7 +688,7 @@ function addShift(shift) {
     hourly_rate: shift.hourly_rate || 25,
   }
   state.shifts.push(item)
-  if (_userId) storage.insertShift(_userId, item).catch(err => console.warn('[Supabase]', err.message))
+  if (_userId) storage.insertShift(_userId, item).catch(err => trackDbError('DB', err))
   return { success: true, errors: [] }
 }
 
@@ -683,7 +696,7 @@ function deleteShift(id) {
   const idx = state.shifts.findIndex((s) => s.id === id)
   if (idx > -1) {
     state.shifts.splice(idx, 1)
-    if (_userId) storage.deleteShift(_userId, id).catch(err => console.warn('[Supabase]', err.message))
+    if (_userId) storage.deleteShift(_userId, id).catch(err => trackDbError('DB', err))
   }
 }
 
@@ -691,7 +704,7 @@ function updateShift(id, updates) {
   const s = state.shifts.find((s) => s.id === id)
   if (s) {
     Object.assign(s, updates)
-    if (_userId) storage.updateShift(_userId, id, updates).catch(err => console.warn('[Supabase]', err.message))
+    if (_userId) storage.updateShift(_userId, id, updates).catch(err => trackDbError('DB', err))
   }
 }
 
@@ -721,13 +734,13 @@ function addRecurring(item) {
     active: true,
   }
   state.recurring.push(entry)
-  if (_userId) storage.insertRecurring(_userId, entry).catch(err => console.warn('[Supabase]', err.message))
+  if (_userId) storage.insertRecurring(_userId, entry).catch(err => trackDbError('DB', err))
   return { success: true, errors: [] }
 }
 
 function updateSettings(updates) {
   Object.assign(state.settings, updates)
-  if (_userId) storage.upsertProfile(_userId, state.settings).catch(err => console.warn('[Supabase]', err.message))
+  if (_userId) storage.upsertProfile(_userId, state.settings).catch(err => trackDbError('DB', err))
 }
 
 /**
@@ -737,7 +750,7 @@ function completeOnboarding(data) {
   if (data.userName) state.settings.userName = data.userName
   if (data.baseCurrency) state.settings.baseCurrency = data.baseCurrency
   if (data.paydayDay) state.settings.paydayDay = data.paydayDay
-  if (_userId) storage.upsertProfile(_userId, state.settings).catch(err => console.warn('[Supabase]', err.message))
+  if (_userId) storage.upsertProfile(_userId, state.settings).catch(err => trackDbError('DB', err))
 }
 
 // ============================================================
@@ -748,11 +761,11 @@ function setBudget(category, limit) {
   const existing = state.budgets.find(b => b.category === category)
   if (existing) {
     existing.limit = limit
-    if (_userId) storage.updateBudget(_userId, existing.id, { limit }).catch(err => console.warn('[Supabase]', err.message))
+    if (_userId) storage.updateBudget(_userId, existing.id, { limit }).catch(err => trackDbError('DB', err))
   } else {
     const item = { id: nextId(), category, limit, createdAt: today() }
     state.budgets.push(item)
-    if (_userId) storage.insertBudget(_userId, item).catch(err => console.warn('[Supabase]', err.message))
+    if (_userId) storage.insertBudget(_userId, item).catch(err => trackDbError('DB', err))
   }
 }
 
@@ -760,7 +773,7 @@ function deleteBudget(id) {
   const idx = state.budgets.findIndex(b => b.id === id)
   if (idx > -1) {
     state.budgets.splice(idx, 1)
-    if (_userId) storage.deleteBudget(_userId, id).catch(err => console.warn('[Supabase]', err.message))
+    if (_userId) storage.deleteBudget(_userId, id).catch(err => trackDbError('DB', err))
   }
 }
 
@@ -809,14 +822,14 @@ function addSavingsGoal(goal) {
     createdAt: today(),
   }
   state.savingsGoals.push(item)
-  if (_userId) storage.insertSavingsGoal(_userId, item).catch(err => console.warn('[Supabase]', err.message))
+  if (_userId) storage.insertSavingsGoal(_userId, item).catch(err => trackDbError('DB', err))
 }
 
 function updateSavingsGoal(id, updates) {
   const g = state.savingsGoals.find(g => g.id === id)
   if (g) {
     Object.assign(g, updates)
-    if (_userId) storage.updateSavingsGoal(_userId, id, updates).catch(err => console.warn('[Supabase]', err.message))
+    if (_userId) storage.updateSavingsGoal(_userId, id, updates).catch(err => trackDbError('DB', err))
   }
 }
 
@@ -824,7 +837,7 @@ function deleteSavingsGoal(id) {
   const idx = state.savingsGoals.findIndex(g => g.id === id)
   if (idx > -1) {
     state.savingsGoals.splice(idx, 1)
-    if (_userId) storage.deleteSavingsGoal(_userId, id).catch(err => console.warn('[Supabase]', err.message))
+    if (_userId) storage.deleteSavingsGoal(_userId, id).catch(err => trackDbError('DB', err))
   }
 }
 
@@ -832,7 +845,7 @@ function contributeToGoal(goalId, amount) {
   const g = state.savingsGoals.find(g => g.id === goalId)
   if (g && amount > 0) {
     g.saved = Math.min(g.target, safeNum(g.saved) + amount)
-    if (_userId) storage.updateSavingsGoal(_userId, goalId, { saved: g.saved }).catch(err => console.warn('[Supabase]', err.message))
+    if (_userId) storage.updateSavingsGoal(_userId, goalId, { saved: g.saved }).catch(err => trackDbError('DB', err))
     // Also record as a saving transaction
     addTransaction({
       type: 'saving',
@@ -897,7 +910,7 @@ function autoGenerateRecurring() {
               isRecurringRef: rec.id,
             }
             state.transactions.push(item)
-            if (_userId) storage.insertTransaction(_userId, item).catch(err => console.warn('[Supabase]', err.message))
+            if (_userId) storage.insertTransaction(_userId, item).catch(err => trackDbError('DB', err))
           }
         }
         d.setDate(d.getDate() + 1)
@@ -905,7 +918,7 @@ function autoGenerateRecurring() {
     })
   
   state.lastRecurringGen = todayStr
-  if (_userId) storage.upsertProfile(_userId, state.settings).catch(err => console.warn('[Supabase]', err.message))
+  if (_userId) storage.upsertProfile(_userId, state.settings).catch(err => trackDbError('DB', err))
 }
 
 // ============================================================
@@ -1127,7 +1140,7 @@ function addAccount(account) {
   if (!state.settings.activeAccountId) {
     state.settings.activeAccountId = acc.id
   }
-  if (_userId) storage.insertAccount(_userId, acc).catch(err => console.warn('[Supabase]', acc))
+  if (_userId) storage.insertAccount(_userId, acc).catch(err => trackDbError("Insert Account", err))
   return acc
 }
 
@@ -1138,7 +1151,7 @@ function deleteAccount(id) {
     if (state.settings.activeAccountId === id) {
       state.settings.activeAccountId = state.accounts[0]?.id || null
     }
-    if (_userId) storage.deleteAccount(_userId, id).catch(err => console.warn('[Supabase]', err.message))
+    if (_userId) storage.deleteAccount(_userId, id).catch(err => trackDbError('DB', err))
   }
 }
 
@@ -1146,13 +1159,13 @@ function updateAccount(id, updates) {
   const acc = state.accounts.find(a => a.id === id)
   if (acc) {
     Object.assign(acc, updates)
-    if (_userId) storage.updateAccount(_userId, id, updates).catch(err => console.warn('[Supabase]', err.message))
+    if (_userId) storage.updateAccount(_userId, id, updates).catch(err => trackDbError('DB', err))
   }
 }
 
 function setActiveAccount(id) {
   state.settings.activeAccountId = id
-  if (_userId) storage.upsertProfile(_userId, state.settings).catch(err => console.warn('[Supabase]', err.message))
+  if (_userId) storage.upsertProfile(_userId, state.settings).catch(err => trackDbError('DB', err))
 }
 
 // Filter transactions by active account
@@ -1191,14 +1204,14 @@ function addMember(member) {
     joinedAt: today(),
   }
   state.members.push(item)
-  if (_userId) storage.insertMember(_userId, item).catch(err => console.warn('[Supabase]', err.message))
+  if (_userId) storage.insertMember(_userId, item).catch(err => trackDbError('DB', err))
 }
 
 function removeMember(id) {
   const idx = state.members.findIndex(m => m.id === id)
   if (idx > -1) {
     state.members.splice(idx, 1)
-    if (_userId) storage.deleteMember(_userId, id).catch(err => console.warn('[Supabase]', err.message))
+    if (_userId) storage.deleteMember(_userId, id).catch(err => trackDbError('DB', err))
   }
 }
 
@@ -1206,7 +1219,7 @@ function updateMember(id, updates) {
   const m = state.members.find(m => m.id === id)
   if (m) {
     Object.assign(m, updates)
-    if (_userId) storage.updateMember(_userId, id, updates).catch(err => console.warn('[Supabase]', err.message))
+    if (_userId) storage.updateMember(_userId, id, updates).catch(err => trackDbError('DB', err))
   }
 }
 
@@ -1215,7 +1228,7 @@ function tagTransactionMember(txnId, memberId) {
   const t = state.transactions.find(t => t.id === txnId)
   if (t) {
     t.memberId = memberId
-    if (_userId) storage.updateTransaction(_userId, txnId, { memberId }).catch(err => console.warn('[Supabase]', err.message))
+    if (_userId) storage.updateTransaction(_userId, txnId, { memberId }).catch(err => trackDbError('DB', err))
   }
 }
 
@@ -1375,6 +1388,7 @@ export function useFinance() {
     isFirstRun,
     dataLoaded,
     initData,
+    lastDbError,
 
     // Computed - Balance
     balance,
