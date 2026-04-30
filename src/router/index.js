@@ -32,9 +32,9 @@ const routes = [
     meta: { requiresAuth: true },
   },
   {
-    path: '/ious',
-    name: 'IOUs',
-    component: () => import('../views/IOUView.vue'),
+    path: '/manage',
+    name: 'Manage',
+    component: () => import('../views/ManageView.vue'),
     meta: { requiresAuth: true },
   },
   {

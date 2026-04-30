@@ -9,7 +9,7 @@ const navItems = [
   { name: 'Home', path: '/', icon: 'home' },
   { name: 'Activity', path: '/transactions', icon: 'transactions' },
   { name: 'Forecast', path: '/forecast', icon: 'forecast' },
-  { name: 'Debts', path: '/ious', icon: 'ious' },
+  { name: 'Manage', path: '/manage', icon: 'manage' },
   { name: 'Profile', path: '/profile', icon: 'profile' },
 ]
 </script>
@@ -42,9 +42,9 @@ const navItems = [
         <svg v-else-if="item.icon === 'forecast'" class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8">
           <path stroke-linecap="round" stroke-linejoin="round" d="M2.25 18L9 11.25l4.306 4.307a11.95 11.95 0 015.814-5.519l2.74-1.22m0 0l-5.94-2.28m5.94 2.28l-2.28 5.941" />
         </svg>
-        <!-- IOUs -->
-        <svg v-else-if="item.icon === 'ious'" class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8">
-          <path stroke-linecap="round" stroke-linejoin="round" d="M15 8.25H9m6 3H9m3 6-3-3h1.5a3 3 0 100-6M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+        <!-- Manage -->
+        <svg v-else-if="item.icon === 'manage'" class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M3.75 6A2.25 2.25 0 016 3.75h2.25A2.25 2.25 0 0110.5 6v2.25a2.25 2.25 0 01-2.25 2.25H6a2.25 2.25 0 01-2.25-2.25V6zM3.75 15.75A2.25 2.25 0 016 13.5h2.25a2.25 2.25 0 012.25 2.25V18a2.25 2.25 0 01-2.25 2.25H6A2.25 2.25 0 013.75 18v-2.25zM13.5 6a2.25 2.25 0 012.25-2.25H18A2.25 2.25 0 0120.25 6v2.25A2.25 2.25 0 0118 10.5h-2.25a2.25 2.25 0 01-2.25-2.25V6zM13.5 15.75a2.25 2.25 0 012.25-2.25H18a2.25 2.25 0 012.25 2.25V18A2.25 2.25 0 0118 20.25h-2.25A2.25 2.25 0 0113.5 18v-2.25z" />
         </svg>
         <!-- Profile -->
         <div v-else-if="item.icon === 'profile'" class="w-5 h-5 rounded-full flex items-center justify-center text-[10px]" :class="route.path === '/profile' ? 'bg-primary/30 text-primary' : 'bg-text-secondary/20 text-text-secondary/60'">
