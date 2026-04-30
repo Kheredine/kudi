@@ -468,17 +468,23 @@ function syncShiftIncomes() {
 }
 
 /**
- * Auto-transition upcoming → received when due_date has passed.
- * Creates an income transaction (idempotent via isRecurringRef).
+ * Check if any upcoming income has passed its activation time (due_date at 16:00 local).
+ * Called on app load and every 60 seconds.
+ * Idempotent — safe to call repeatedly.
  */
-function processReceivedPayments() {
-  const todayStr = today()
+function checkDueIncome() {
+  const now = new Date()
   state.futureIncomes
-    .filter(fi => fi.status === 'upcoming' && fi.dueDate <= todayStr)
+    .filter(fi => {
+      if (fi.status !== 'upcoming') return false
+      // Activate at 16:00 local time on the due date
+      const activateAt = new Date(fi.dueDate + 'T16:00:00')
+      return now >= activateAt
+    })
     .forEach(fi => {
       updateFutureIncome(fi.id, { status: 'received', receivedAt: fi.dueDate })
 
-      // Check both new fi: key and old shift: key to prevent duplicates on migration
+      // Idempotency: check both new fi: key and legacy shift: key
       const alreadyExists = state.transactions.some(t =>
         t.isRecurringRef === `fi:${fi.id}` ||
         (fi.refKey && t.isRecurringRef === fi.refKey)
@@ -492,7 +498,7 @@ function processReceivedPayments() {
           category: 'Income',
           date: fi.dueDate,
           accountId: fi.accountId || state.settings.activeAccountId || null,
-          note: 'Auto-generated income',
+          note: 'Auto-processed at 16:00',
           isRecurringRef: `fi:${fi.id}`,
         })
       }
@@ -1703,7 +1709,7 @@ export function useFinance() {
     updateFutureIncome,
     deleteFutureIncome,
     syncShiftIncomes,
-    processReceivedPayments,
+    checkDueIncome,
 
     // Actions - Recurring
     addRecurring,

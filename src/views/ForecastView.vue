@@ -8,30 +8,8 @@ const router = useRouter()
 const {
   forecast, lowestBalancePoint, currentBalance, getCurrencySymbol, state,
   upcomingIncomes, INCOME_TYPE_META,
-  addFutureIncome, deleteFutureIncome, updateFutureIncome, addTransaction,
+  addFutureIncome, deleteFutureIncome,
 } = useFinance()
-
-const todayStr = new Date().toISOString().split('T')[0]
-
-function isOverdue(dueDate) {
-  return dueDate <= todayStr
-}
-
-function markReceived(fi) {
-  updateFutureIncome(fi.id, { status: 'received', receivedAt: fi.dueDate })
-  const refKey = `fi:${fi.id}`
-  addTransaction({
-    type: 'income',
-    label: fi.title,
-    amount: fi.amount,
-    currency: fi.currency || state.settings.baseCurrency,
-    category: 'Income',
-    date: fi.dueDate,
-    accountId: fi.accountId || state.settings.activeAccountId || null,
-    note: 'Marked as received',
-    isRecurringRef: refKey,
-  })
-}
 
 const showExport = ref(false)
 const showAddForm = ref(false)
@@ -81,25 +59,21 @@ function submitAdd() {
 // ── Helpers ───────────────────────────────────────────────────
 function fmtDate(dateStr) {
   const d = new Date(dateStr + 'T00:00:00')
-  const day = d.getDate()
-  const suffix = [, 'st', 'nd', 'rd'][day] || 'th'
   return d.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
-    .replace(/(\w+) (\d+),/, (_, m, n) => `${m} ${n}${[,'st','nd','rd'][n]||'th'},`)
 }
 
 function daysAway(dateStr) {
   const today = new Date().toISOString().split('T')[0]
   const diff = Math.ceil((new Date(dateStr + 'T00:00:00') - new Date(today + 'T00:00:00')) / 86400000)
-  if (diff === 0) return 'Today'
-  if (diff === 1) return 'Tomorrow'
-  if (diff < 0) return `${Math.abs(diff)} days ago`
+  if (diff === 0) return 'Today at 16:00'
+  if (diff === 1) return 'Tomorrow at 16:00'
   return `In ${diff} days`
 }
 
 function daysAwaySeverity(dateStr) {
   const today = new Date().toISOString().split('T')[0]
   const diff = Math.ceil((new Date(dateStr + 'T00:00:00') - new Date(today + 'T00:00:00')) / 86400000)
-  if (diff <= 2) return 'text-primary font-semibold'
+  if (diff <= 1) return 'text-primary font-semibold'
   if (diff <= 7) return 'text-amber-400'
   return 'text-text-secondary'
 }
@@ -164,10 +138,7 @@ function typeMeta(type) {
         <div
           v-for="fi in upcomingIncomes"
           :key="fi.id"
-          class="rounded-2xl p-4 transition-colors"
-          :class="isOverdue(fi.dueDate)
-            ? 'bg-amber-400/5 border border-amber-400/30'
-            : 'bg-card border border-border hover:border-primary/20'"
+          class="bg-card border border-border rounded-2xl p-4 hover:border-primary/20 transition-colors"
         >
           <div class="flex items-start gap-3">
             <!-- Type icon -->
@@ -186,38 +157,26 @@ function typeMeta(type) {
               </p>
               <div class="flex items-center gap-2 mt-1.5">
                 <span class="text-xs text-text-secondary">{{ fmtDate(fi.dueDate) }}</span>
-                <span class="text-[10px] px-1.5 py-0.5 rounded-full border"
-                      :class="isOverdue(fi.dueDate)
-                        ? 'bg-amber-400/10 border-amber-400/30 text-amber-400 font-medium'
-                        : ['bg-surface border-border', daysAwaySeverity(fi.dueDate)]">
-                  {{ isOverdue(fi.dueDate) ? 'Due' : daysAway(fi.dueDate) }}
+                <span class="text-[10px] px-1.5 py-0.5 rounded-full bg-surface border border-border"
+                      :class="daysAwaySeverity(fi.dueDate)">
+                  {{ daysAway(fi.dueDate) }}
                 </span>
               </div>
             </div>
 
-            <!-- Amount + actions -->
+            <!-- Amount + delete -->
             <div class="flex flex-col items-end gap-2 shrink-0">
               <p class="text-base font-bold text-primary">
                 +{{ sym() }}{{ fi.amount.toLocaleString('en-US', { minimumFractionDigits: 2 }) }}
               </p>
-              <div class="flex items-center gap-1">
-                <!-- Mark received (only for overdue/due today) -->
-                <button
-                  v-if="isOverdue(fi.dueDate)"
-                  @click="markReceived(fi)"
-                  class="text-[10px] px-2 py-1 rounded-lg bg-primary/10 text-primary font-medium hover:bg-primary/20 transition-colors"
-                >
-                  Received ✓
-                </button>
-                <button
-                  @click="deleteFutureIncome(fi.id)"
-                  class="p-1 rounded-lg text-text-secondary/40 hover:text-danger hover:bg-danger/10 transition-colors"
-                >
-                  <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                    <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </button>
-              </div>
+              <button
+                @click="deleteFutureIncome(fi.id)"
+                class="p-1 rounded-lg text-text-secondary/40 hover:text-danger hover:bg-danger/10 transition-colors"
+              >
+                <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
             </div>
           </div>
         </div>

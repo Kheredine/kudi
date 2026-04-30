@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useFinance } from '../composables/useFinance'
 import { useAIInsights } from '../composables/useAIInsights'
 import { usePrivacy } from '../composables/usePrivacy'
@@ -18,7 +18,7 @@ const {
   state, balance, totalIncome, totalExpenses, totalSavings,
   daysUntilPayday, insights, forecast, lowestBalancePoint, avgDailySpend,
   budgetStatus, savingsGoalStatus, upcomingBills, autoGenerateRecurring,
-  syncShiftIncomes, processReceivedPayments, nearestIncome, getCurrencySymbol,
+  syncShiftIncomes, checkDueIncome, nearestIncome, getCurrencySymbol,
   INCOME_TYPE_META,
 } = useFinance()
 
@@ -36,20 +36,26 @@ const displayInsights = computed(() => {
   return insights.value.slice(0, 2)
 })
 
+let _dueCheckInterval = null
+
 onMounted(() => {
   fetchInsights()
   autoGenerateRecurring()
   syncShiftIncomes()
-  // processReceivedPayments is NOT called automatically —
-  // income is recorded only when the user taps "Mark as Received" in Forecast
+  checkDueIncome()
+  // Re-check every 60 s so income activates precisely at 16:00
+  _dueCheckInterval = setInterval(checkDueIncome, 60_000)
+})
+
+onUnmounted(() => {
+  clearInterval(_dueCheckInterval)
 })
 
 function daysAway(dateStr) {
   const today = new Date().toISOString().split('T')[0]
   const diff = Math.ceil((new Date(dateStr + 'T00:00:00') - new Date(today + 'T00:00:00')) / 86400000)
-  if (diff === 0) return 'Today'
-  if (diff === 1) return 'Tomorrow'
-  if (diff < 0) return `${Math.abs(diff)} days ago`
+  if (diff === 0) return 'Today at 16:00'
+  if (diff === 1) return 'Tomorrow at 16:00'
   return `In ${diff} days`
 }
 
