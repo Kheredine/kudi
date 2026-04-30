@@ -1,5 +1,8 @@
 {
   "rewrites": [
-    { "source": "/(.*)", "destination": "/" }
+    {
+      "source": "/((?!assets/|icons|favicon|manifest|sw\\.js|apple-touch|icon-).*)",
+      "destination": "/index.html"
+    }
   ]
 }
