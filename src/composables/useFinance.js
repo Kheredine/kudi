@@ -1,5 +1,5 @@
-import { reactive, computed } from 'vue'
-import { persistReactive } from './useStorage'
+import { reactive, computed, ref } from 'vue'
+import * as storage from './useStorage'
 
 // ============================================================
 // DATE UTILITIES
@@ -116,8 +116,37 @@ function createDefaultState() {
 const rawState = createDefaultState()
 const state = reactive(rawState)
 
-// Persist to localStorage + Supabase
-persistReactive(state, 'finance-data')
+// Supabase state tracking
+const dataLoaded = ref(false)
+let _userId = null
+
+/**
+ * Initialize data from Supabase. Called once after auth.
+ */
+async function initData(userId) {
+  if (!userId) return
+  _userId = userId
+
+  try {
+    const data = await storage.loadAllData(userId)
+    if (data) {
+      if (data.settings) Object.assign(state.settings, data.settings)
+      state.transactions = data.transactions || []
+      state.shifts = data.shifts || []
+      state.recurring = data.recurring || []
+      state.budgets = data.budgets || []
+      state.savingsGoals = data.savingsGoals || []
+      state.ious = data.ious || []
+      state.accounts = data.accounts || []
+      state.members = data.members || []
+      state.lastRecurringGen = data.lastRecurringGen || null
+    }
+  } catch (err) {
+    console.warn('[initData] Load failed, starting fresh:', err.message)
+  }
+
+  dataLoaded.value = true
+}
 
 // First-run detection
 const isFirstRun = computed(() => {
@@ -276,7 +305,7 @@ function addIOU(iou) {
   if (!iou.person || !iou.person.trim()) return { success: false, errors: ['Person name is required'] }
   if (!iou.amount || Number(iou.amount) <= 0) return { success: false, errors: ['Amount must be greater than 0'] }
   if (!state.ious) state.ious = []
-  state.ious.push({
+  const item = {
     id: nextId(),
     person: iou.person.trim(),
     amount: Number(iou.amount),
@@ -285,19 +314,27 @@ function addIOU(iou) {
     interestRate: Number(iou.interestRate || 0),
     notes: iou.notes || '',
     paid: false,
-  })
+  }
+  state.ious.push(item)
+  if (_userId) storage.insertIOU(_userId, item).catch(err => console.warn('[Supabase]', err.message))
   return { success: true, errors: [] }
 }
 
 function updateIOU(id, updates) {
   const item = (state.ious || []).find((i) => i.id === id)
-  if (item) Object.assign(item, updates)
+  if (item) {
+    Object.assign(item, updates)
+    if (_userId) storage.updateIOU(_userId, id, updates).catch(err => console.warn('[Supabase]', err.message))
+  }
 }
 
 function deleteIOU(id) {
   if (!state.ious) return
   const idx = state.ious.findIndex((i) => i.id === id)
-  if (idx > -1) state.ious.splice(idx, 1)
+  if (idx > -1) {
+    state.ious.splice(idx, 1)
+    if (_userId) storage.deleteIOU(_userId, id).catch(err => console.warn('[Supabase]', err.message))
+  }
 }
 
 function setPaydayOverride(defaultDate, overrideDate) {
@@ -569,7 +606,7 @@ function addTransaction(transaction) {
     return { success: false, errors }
   }
 
-  state.transactions.unshift({
+  const item = {
     id: nextId(),
     type: transaction.type || (transaction.amount > 0 ? 'income' : 'expense'),
     amount: Math.abs(transaction.amount || 0),
@@ -578,13 +615,21 @@ function addTransaction(transaction) {
     label: transaction.label || '',
     date: transaction.date || today(),
     note: transaction.note || '',
-  })
+    accountId: transaction.accountId || null,
+    memberId: transaction.memberId || null,
+    isRecurringRef: transaction.isRecurringRef || null,
+  }
+  state.transactions.unshift(item)
+  if (_userId) storage.insertTransaction(_userId, item).catch(err => console.warn('[Supabase]', err.message))
   return { success: true, errors: [] }
 }
 
 function deleteTransaction(id) {
   const idx = state.transactions.findIndex((t) => t.id === id)
-  if (idx > -1) state.transactions.splice(idx, 1)
+  if (idx > -1) {
+    state.transactions.splice(idx, 1)
+    if (_userId) storage.deleteTransaction(_userId, id).catch(err => console.warn('[Supabase]', err.message))
+  }
 }
 
 function updateTransaction(id, updates) {
@@ -594,6 +639,7 @@ function updateTransaction(id, updates) {
     const errors = validateTransaction(merged)
     if (errors.length > 0) return { success: false, errors }
     Object.assign(t, updates)
+    if (_userId) storage.updateTransaction(_userId, id, updates).catch(err => console.warn('[Supabase]', err.message))
     return { success: true, errors: [] }
   }
   return { success: false, errors: ['Transaction not found'] }
@@ -610,32 +656,43 @@ function validateTransaction(t) {
 
 function toggleRecurring(id) {
   const item = state.recurring.find((r) => r.id === id)
-  if (item) item.active = !item.active
+  if (item) {
+    item.active = !item.active
+    if (_userId) storage.updateRecurring(_userId, id, { active: item.active }).catch(err => console.warn('[Supabase]', err.message))
+  }
 }
 
 function addShift(shift) {
   const errors = validateShift(shift)
   if (errors.length > 0) return { success: false, errors }
 
-  state.shifts.push({
+  const item = {
     id: nextId(),
     date: shift.date || today(),
     start_time: shift.start_time || '09:00',
     end_time: shift.end_time || '17:00',
     break_hours: shift.break_hours || 0,
     hourly_rate: shift.hourly_rate || 25,
-  })
+  }
+  state.shifts.push(item)
+  if (_userId) storage.insertShift(_userId, item).catch(err => console.warn('[Supabase]', err.message))
   return { success: true, errors: [] }
 }
 
 function deleteShift(id) {
   const idx = state.shifts.findIndex((s) => s.id === id)
-  if (idx > -1) state.shifts.splice(idx, 1)
+  if (idx > -1) {
+    state.shifts.splice(idx, 1)
+    if (_userId) storage.deleteShift(_userId, id).catch(err => console.warn('[Supabase]', err.message))
+  }
 }
 
 function updateShift(id, updates) {
   const s = state.shifts.find((s) => s.id === id)
-  if (s) Object.assign(s, updates)
+  if (s) {
+    Object.assign(s, updates)
+    if (_userId) storage.updateShift(_userId, id, updates).catch(err => console.warn('[Supabase]', err.message))
+  }
 }
 
 function validateShift(s) {
@@ -652,7 +709,7 @@ function addRecurring(item) {
   if (!item.name || !item.name.trim()) return { success: false, errors: ['Name is required'] }
   if (!item.amount || Number(item.amount) <= 0) return { success: false, errors: ['Amount must be greater than 0'] }
 
-  state.recurring.push({
+  const entry = {
     id: nextId(),
     name: item.name,
     type: item.type || 'expense',
@@ -662,12 +719,15 @@ function addRecurring(item) {
     day: item.day || null,
     day_of_week: item.day_of_week || null,
     active: true,
-  })
+  }
+  state.recurring.push(entry)
+  if (_userId) storage.insertRecurring(_userId, entry).catch(err => console.warn('[Supabase]', err.message))
   return { success: true, errors: [] }
 }
 
 function updateSettings(updates) {
   Object.assign(state.settings, updates)
+  if (_userId) storage.upsertProfile(_userId, state.settings).catch(err => console.warn('[Supabase]', err.message))
 }
 
 /**
@@ -677,6 +737,7 @@ function completeOnboarding(data) {
   if (data.userName) state.settings.userName = data.userName
   if (data.baseCurrency) state.settings.baseCurrency = data.baseCurrency
   if (data.paydayDay) state.settings.paydayDay = data.paydayDay
+  if (_userId) storage.upsertProfile(_userId, state.settings).catch(err => console.warn('[Supabase]', err.message))
 }
 
 // ============================================================
@@ -687,14 +748,20 @@ function setBudget(category, limit) {
   const existing = state.budgets.find(b => b.category === category)
   if (existing) {
     existing.limit = limit
+    if (_userId) storage.updateBudget(_userId, existing.id, { limit }).catch(err => console.warn('[Supabase]', err.message))
   } else {
-    state.budgets.push({ id: nextId(), category, limit, createdAt: today() })
+    const item = { id: nextId(), category, limit, createdAt: today() }
+    state.budgets.push(item)
+    if (_userId) storage.insertBudget(_userId, item).catch(err => console.warn('[Supabase]', err.message))
   }
 }
 
 function deleteBudget(id) {
   const idx = state.budgets.findIndex(b => b.id === id)
-  if (idx > -1) state.budgets.splice(idx, 1)
+  if (idx > -1) {
+    state.budgets.splice(idx, 1)
+    if (_userId) storage.deleteBudget(_userId, id).catch(err => console.warn('[Supabase]', err.message))
+  }
 }
 
 const budgetSpending = computed(() => {
@@ -732,7 +799,7 @@ const budgetStatus = computed(() => {
 // ============================================================
 
 function addSavingsGoal(goal) {
-  state.savingsGoals.push({
+  const item = {
     id: nextId(),
     name: goal.name,
     target: goal.target || 0,
@@ -740,23 +807,32 @@ function addSavingsGoal(goal) {
     icon: goal.icon || '🎯',
     deadline: goal.deadline || null,
     createdAt: today(),
-  })
+  }
+  state.savingsGoals.push(item)
+  if (_userId) storage.insertSavingsGoal(_userId, item).catch(err => console.warn('[Supabase]', err.message))
 }
 
 function updateSavingsGoal(id, updates) {
   const g = state.savingsGoals.find(g => g.id === id)
-  if (g) Object.assign(g, updates)
+  if (g) {
+    Object.assign(g, updates)
+    if (_userId) storage.updateSavingsGoal(_userId, id, updates).catch(err => console.warn('[Supabase]', err.message))
+  }
 }
 
 function deleteSavingsGoal(id) {
   const idx = state.savingsGoals.findIndex(g => g.id === id)
-  if (idx > -1) state.savingsGoals.splice(idx, 1)
+  if (idx > -1) {
+    state.savingsGoals.splice(idx, 1)
+    if (_userId) storage.deleteSavingsGoal(_userId, id).catch(err => console.warn('[Supabase]', err.message))
+  }
 }
 
 function contributeToGoal(goalId, amount) {
   const g = state.savingsGoals.find(g => g.id === goalId)
   if (g && amount > 0) {
     g.saved = Math.min(g.target, safeNum(g.saved) + amount)
+    if (_userId) storage.updateSavingsGoal(_userId, goalId, { saved: g.saved }).catch(err => console.warn('[Supabase]', err.message))
     // Also record as a saving transaction
     addTransaction({
       type: 'saving',
@@ -809,7 +885,7 @@ function autoGenerateRecurring() {
             t.label === rec.name && t.date === dateStr && t.isRecurringRef === rec.id
           )
           if (!exists) {
-            state.transactions.push({
+            const item = {
               id: nextId(),
               type: rec.type === 'expense' ? 'expense' : 'saving',
               amount: rec.amount,
@@ -819,7 +895,9 @@ function autoGenerateRecurring() {
               date: dateStr,
               note: 'Auto-generated',
               isRecurringRef: rec.id,
-            })
+            }
+            state.transactions.push(item)
+            if (_userId) storage.insertTransaction(_userId, item).catch(err => console.warn('[Supabase]', err.message))
           }
         }
         d.setDate(d.getDate() + 1)
@@ -827,6 +905,7 @@ function autoGenerateRecurring() {
     })
   
   state.lastRecurringGen = todayStr
+  if (_userId) storage.upsertProfile(_userId, state.settings).catch(err => console.warn('[Supabase]', err.message))
 }
 
 // ============================================================
@@ -1048,6 +1127,7 @@ function addAccount(account) {
   if (!state.settings.activeAccountId) {
     state.settings.activeAccountId = acc.id
   }
+  if (_userId) storage.insertAccount(_userId, acc).catch(err => console.warn('[Supabase]', acc))
   return acc
 }
 
@@ -1058,16 +1138,21 @@ function deleteAccount(id) {
     if (state.settings.activeAccountId === id) {
       state.settings.activeAccountId = state.accounts[0]?.id || null
     }
+    if (_userId) storage.deleteAccount(_userId, id).catch(err => console.warn('[Supabase]', err.message))
   }
 }
 
 function updateAccount(id, updates) {
   const acc = state.accounts.find(a => a.id === id)
-  if (acc) Object.assign(acc, updates)
+  if (acc) {
+    Object.assign(acc, updates)
+    if (_userId) storage.updateAccount(_userId, id, updates).catch(err => console.warn('[Supabase]', err.message))
+  }
 }
 
 function setActiveAccount(id) {
   state.settings.activeAccountId = id
+  if (_userId) storage.upsertProfile(_userId, state.settings).catch(err => console.warn('[Supabase]', err.message))
 }
 
 // Filter transactions by active account
@@ -1097,30 +1182,41 @@ const accountBalances = computed(() => {
 // ============================================================
 
 function addMember(member) {
-  state.members.push({
+  const item = {
     id: nextId(),
     name: member.name || 'Unknown',
     avatar: member.avatar || '👤',
     color: member.color || '#6366F1',
     role: member.role || 'member', // owner, member
     joinedAt: today(),
-  })
+  }
+  state.members.push(item)
+  if (_userId) storage.insertMember(_userId, item).catch(err => console.warn('[Supabase]', err.message))
 }
 
 function removeMember(id) {
   const idx = state.members.findIndex(m => m.id === id)
-  if (idx > -1) state.members.splice(idx, 1)
+  if (idx > -1) {
+    state.members.splice(idx, 1)
+    if (_userId) storage.deleteMember(_userId, id).catch(err => console.warn('[Supabase]', err.message))
+  }
 }
 
 function updateMember(id, updates) {
   const m = state.members.find(m => m.id === id)
-  if (m) Object.assign(m, updates)
+  if (m) {
+    Object.assign(m, updates)
+    if (_userId) storage.updateMember(_userId, id, updates).catch(err => console.warn('[Supabase]', err.message))
+  }
 }
 
 // Tag a transaction with a member
 function tagTransactionMember(txnId, memberId) {
   const t = state.transactions.find(t => t.id === txnId)
-  if (t) t.memberId = memberId
+  if (t) {
+    t.memberId = memberId
+    if (_userId) storage.updateTransaction(_userId, txnId, { memberId }).catch(err => console.warn('[Supabase]', err.message))
+  }
 }
 
 // Per-member spending breakdown
@@ -1277,6 +1373,8 @@ export function useFinance() {
     // State
     state,
     isFirstRun,
+    dataLoaded,
+    initData,
 
     // Computed - Balance
     balance,

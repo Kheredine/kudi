@@ -11,15 +11,3 @@ export const supabase = createClient(supabaseUrl, supabaseKey)
 export function isSupabaseConfigured() {
   return !!(supabaseUrl && supabaseKey)
 }
-
-/**
- * Generate or retrieve a user device ID for anonymous auth
- */
-export function getDeviceId() {
-  let id = localStorage.getItem('kudi-device-id')
-  if (!id) {
-    id = 'dev_' + crypto.randomUUID()
-    localStorage.setItem('kudi-device-id', id)
-  }
-  return id
-}

@@ -1,11 +1,31 @@
 <script setup>
 import { ref } from 'vue'
+import { useRouter } from 'vue-router'
 import { useFinance } from '../composables/useFinance'
+import { useAuth } from '../composables/useAuth'
+import { resetAllData } from '../composables/useStorage'
 import { LANGUAGES } from '../composables/useI18n'
 import ExportModal from '../components/ExportModal.vue'
 
+const router = useRouter()
 const { state, updateSettings, getCurrencySymbol, applyTheme } = useFinance()
+const { getUserId, logout } = useAuth()
 const showExport = ref(false)
+const resetting = ref(false)
+
+async function handleReset() {
+  if (!confirm('Reset all data? This cannot be undone.')) return
+  resetting.value = true
+  try {
+    const userId = await getUserId()
+    if (userId) await resetAllData(userId)
+    await logout()
+    router.replace('/auth')
+  } catch (err) {
+    console.error('Reset failed:', err)
+  }
+  resetting.value = false
+}
 </script>
 
 <template>
@@ -130,9 +150,10 @@ const showExport = ref(false)
       <!-- Danger -->
       <button
         class="w-full bg-danger/10 hover:bg-danger/20 text-danger font-semibold py-3 rounded-xl text-sm transition-colors"
-        @click="if (confirm('Reset all data? This cannot be undone.')) { localStorage.clear(); location.reload() }"
+        :class="{ 'opacity-50 pointer-events-none': resetting }"
+        @click="handleReset"
       >
-        Reset All Data
+        {{ resetting ? 'Resetting...' : 'Reset All Data' }}
       </button>
     </div>
 

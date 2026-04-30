@@ -1,5 +1,5 @@
 -- ============================================================
--- KUDI APP - Supabase Database Schema (SECURED)
+-- KUDI APP - Supabase Database Schema (Supabase Auth + RLS)
 -- Run this in Supabase SQL Editor to set up tables
 -- ============================================================
 
@@ -7,31 +7,24 @@
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
 -- ============================================================
--- USER PROFILES (anonymous device-based identity)
+-- USER PROFILES (linked to Supabase Auth)
 -- ============================================================
 CREATE TABLE IF NOT EXISTS profiles (
-  id TEXT PRIMARY KEY, -- device_id
+  id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
   user_name TEXT DEFAULT 'User',
+  avatar TEXT,
   base_currency TEXT DEFAULT 'USD',
   payday_day INTEGER DEFAULT 25,
+  payday1 INTEGER DEFAULT 10,
+  payday2 INTEGER DEFAULT 25,
+  payday_date_overrides JSONB DEFAULT '{}',
+  language TEXT DEFAULT 'en',
+  theme TEXT DEFAULT 'dark',
+  active_account_id BIGINT,
   onboarded BOOLEAN DEFAULT false,
-  pin_hash TEXT, -- SHA-256 hashed PIN (NEVER store raw PIN)
-  biometric_enabled BOOLEAN DEFAULT false,
+  last_recurring_gen DATE,
   created_at TIMESTAMPTZ DEFAULT now(),
   updated_at TIMESTAMPTZ DEFAULT now()
-);
-
--- ============================================================
--- WEBAUTHN CREDENTIALS (for biometric authentication)
--- ============================================================
-CREATE TABLE IF NOT EXISTS webauthn_credentials (
-  id BIGSERIAL PRIMARY KEY,
-  profile_id TEXT REFERENCES profiles(id) ON DELETE CASCADE,
-  credential_id TEXT NOT NULL, -- Base64 encoded credential ID
-  public_key TEXT NOT NULL, -- Base64 encoded public key
-  counter INTEGER DEFAULT 0,
-  created_at TIMESTAMPTZ DEFAULT now(),
-  UNIQUE(profile_id)
 );
 
 -- ============================================================
@@ -39,7 +32,7 @@ CREATE TABLE IF NOT EXISTS webauthn_credentials (
 -- ============================================================
 CREATE TABLE IF NOT EXISTS transactions (
   id BIGSERIAL PRIMARY KEY,
-  profile_id TEXT REFERENCES profiles(id) ON DELETE CASCADE,
+  user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
   type TEXT NOT NULL CHECK (type IN ('income', 'expense', 'saving')),
   amount NUMERIC(12,2) NOT NULL DEFAULT 0,
   currency TEXT DEFAULT 'USD',
@@ -47,6 +40,9 @@ CREATE TABLE IF NOT EXISTS transactions (
   label TEXT DEFAULT '',
   date DATE NOT NULL DEFAULT CURRENT_DATE,
   note TEXT DEFAULT '',
+  account_id BIGINT,
+  member_id BIGINT,
+  recurring_ref BIGINT,
   created_at TIMESTAMPTZ DEFAULT now()
 );
 
@@ -55,7 +51,7 @@ CREATE TABLE IF NOT EXISTS transactions (
 -- ============================================================
 CREATE TABLE IF NOT EXISTS shifts (
   id BIGSERIAL PRIMARY KEY,
-  profile_id TEXT REFERENCES profiles(id) ON DELETE CASCADE,
+  user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
   date DATE NOT NULL DEFAULT CURRENT_DATE,
   start_time TEXT DEFAULT '09:00',
   end_time TEXT DEFAULT '17:00',
@@ -69,7 +65,7 @@ CREATE TABLE IF NOT EXISTS shifts (
 -- ============================================================
 CREATE TABLE IF NOT EXISTS recurring (
   id BIGSERIAL PRIMARY KEY,
-  profile_id TEXT REFERENCES profiles(id) ON DELETE CASCADE,
+  user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
   name TEXT NOT NULL,
   type TEXT NOT NULL CHECK (type IN ('expense', 'saving')),
   amount NUMERIC(12,2) NOT NULL DEFAULT 0,
@@ -82,17 +78,91 @@ CREATE TABLE IF NOT EXISTS recurring (
 );
 
 -- ============================================================
--- INDEXES for fast queries
+-- BUDGETS
 -- ============================================================
-CREATE INDEX IF NOT EXISTS idx_transactions_profile ON transactions(profile_id);
-CREATE INDEX IF NOT EXISTS idx_transactions_date ON transactions(profile_id, date DESC);
-CREATE INDEX IF NOT EXISTS idx_shifts_profile ON shifts(profile_id);
-CREATE INDEX IF NOT EXISTS idx_shifts_date ON shifts(profile_id, date);
-CREATE INDEX IF NOT EXISTS idx_recurring_profile ON recurring(profile_id);
+CREATE TABLE IF NOT EXISTS budgets (
+  id BIGSERIAL PRIMARY KEY,
+  user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  category TEXT NOT NULL,
+  limit_amount NUMERIC(12,2) NOT NULL DEFAULT 0,
+  created_at DATE DEFAULT CURRENT_DATE
+);
 
 -- ============================================================
--- ROW LEVEL SECURITY (RLS) - SECURED
--- Users can ONLY access their own data (scoped by device_id)
+-- SAVINGS GOALS
+-- ============================================================
+CREATE TABLE IF NOT EXISTS savings_goals (
+  id BIGSERIAL PRIMARY KEY,
+  user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  target NUMERIC(12,2) DEFAULT 0,
+  saved NUMERIC(12,2) DEFAULT 0,
+  icon TEXT DEFAULT '🎯',
+  deadline DATE,
+  created_at DATE DEFAULT CURRENT_DATE
+);
+
+-- ============================================================
+-- IOUS (Debts / Loans)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS ious (
+  id BIGSERIAL PRIMARY KEY,
+  user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  person TEXT NOT NULL,
+  amount NUMERIC(12,2) NOT NULL,
+  date_lent DATE DEFAULT CURRENT_DATE,
+  due_date DATE,
+  interest_rate NUMERIC(5,2) DEFAULT 0,
+  notes TEXT DEFAULT '',
+  paid BOOLEAN DEFAULT false,
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+
+-- ============================================================
+-- ACCOUNTS (Multi-account support)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS accounts (
+  id BIGSERIAL PRIMARY KEY,
+  user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  name TEXT NOT NULL DEFAULT 'Untitled Account',
+  type TEXT DEFAULT 'checking',
+  icon TEXT DEFAULT '💳',
+  color TEXT DEFAULT '#22C55E',
+  currency TEXT DEFAULT 'USD',
+  initial_balance NUMERIC(12,2) DEFAULT 0,
+  created_at DATE DEFAULT CURRENT_DATE
+);
+
+-- ============================================================
+-- MEMBERS (Shared finances)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS members (
+  id BIGSERIAL PRIMARY KEY,
+  user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  name TEXT NOT NULL DEFAULT 'Unknown',
+  avatar TEXT DEFAULT '👤',
+  color TEXT DEFAULT '#6366F1',
+  role TEXT DEFAULT 'member',
+  joined_at DATE DEFAULT CURRENT_DATE
+);
+
+-- ============================================================
+-- INDEXES for fast queries
+-- ============================================================
+CREATE INDEX IF NOT EXISTS idx_transactions_user ON transactions(user_id);
+CREATE INDEX IF NOT EXISTS idx_transactions_date ON transactions(user_id, date DESC);
+CREATE INDEX IF NOT EXISTS idx_shifts_user ON shifts(user_id);
+CREATE INDEX IF NOT EXISTS idx_shifts_date ON shifts(user_id, date);
+CREATE INDEX IF NOT EXISTS idx_recurring_user ON recurring(user_id);
+CREATE INDEX IF NOT EXISTS idx_budgets_user ON budgets(user_id);
+CREATE INDEX IF NOT EXISTS idx_savings_goals_user ON savings_goals(user_id);
+CREATE INDEX IF NOT EXISTS idx_ious_user ON ious(user_id);
+CREATE INDEX IF NOT EXISTS idx_accounts_user ON accounts(user_id);
+CREATE INDEX IF NOT EXISTS idx_members_user ON members(user_id);
+
+-- ============================================================
+-- ROW LEVEL SECURITY (RLS) - SECURE
+-- Users can ONLY access their own data
 -- ============================================================
 
 -- Enable RLS on all tables
@@ -100,124 +170,124 @@ ALTER TABLE profiles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE transactions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE shifts ENABLE ROW LEVEL SECURITY;
 ALTER TABLE recurring ENABLE ROW LEVEL SECURITY;
+ALTER TABLE budgets ENABLE ROW LEVEL SECURITY;
+ALTER TABLE savings_goals ENABLE ROW LEVEL SECURITY;
+ALTER TABLE ious ENABLE ROW LEVEL SECURITY;
+ALTER TABLE accounts ENABLE ROW LEVEL SECURITY;
+ALTER TABLE members ENABLE ROW LEVEL SECURITY;
 
--- ⚠️ IMPORTANT: Drop old permissive policies if they exist
+-- Drop old policies if they exist
 DROP POLICY IF EXISTS "Allow full access to profiles" ON profiles;
 DROP POLICY IF EXISTS "Allow full access to transactions" ON transactions;
 DROP POLICY IF EXISTS "Allow full access to shifts" ON shifts;
 DROP POLICY IF EXISTS "Allow full access to recurring" ON recurring;
+DROP POLICY IF EXISTS "Users can view own profile" ON profiles;
+DROP POLICY IF EXISTS "Users can insert own profile" ON profiles;
+DROP POLICY IF EXISTS "Users can update own profile" ON profiles;
+DROP POLICY IF EXISTS "Users can view own transactions" ON transactions;
+DROP POLICY IF EXISTS "Users can insert own transactions" ON transactions;
+DROP POLICY IF EXISTS "Users can update own transactions" ON transactions;
+DROP POLICY IF EXISTS "Users can delete own transactions" ON transactions;
+DROP POLICY IF EXISTS "Users can view own shifts" ON shifts;
+DROP POLICY IF EXISTS "Users can insert own shifts" ON shifts;
+DROP POLICY IF EXISTS "Users can update own shifts" ON shifts;
+DROP POLICY IF EXISTS "Users can delete own shifts" ON shifts;
+DROP POLICY IF EXISTS "Users can view own recurring" ON recurring;
+DROP POLICY IF EXISTS "Users can insert own recurring" ON recurring;
+DROP POLICY IF EXISTS "Users can update own recurring" ON recurring;
+DROP POLICY IF EXISTS "Users can delete own recurring" ON recurring;
 
 -- ============================================================
--- NEW SECURE POLICIES: Users can only access their own data
--- The client sends their device_id via a custom header or
--- we use a function to extract it from the request JWT.
---
--- For now (device-id based auth via anon key), we use a
--- request header approach via a Supabase function.
---
--- The simplest secure approach with anon key + device_id:
--- We create a helper function that reads the device_id from
--- the request headers, and policies that check profile_id
--- matches the authenticated device.
---
--- Since Supabase anon key doesn't support custom headers in
--- policies directly, we use a "self-service" approach:
--- The profile_id in each row determines ownership, and
--- policies ensure users can only CRUD rows they own.
---
--- For this to work securely, we need to pass the device_id
--- as part of the request. The client already does this via
--- profile_id filtering in queries. But to prevent spoofing,
--- we lock down the policies to use a verified identity.
---
--- === INTERIM SOLUTION (better than permissive): ===
--- Use the app's JWT claims or a custom header approach.
--- For anonymous auth with anon key, the most practical
--- approach is to use Supabase Anonymous Auth (email-less).
---
--- For now, we implement profile_id-based policies that
--- at minimum prevent cross-user data access.
+-- SECURE POLICIES: user_id = auth.uid()
 -- ============================================================
 
--- Helper: Extract requesting device_id from the request
--- This uses a custom claim set during auth or a default anon approach
-CREATE OR REPLACE FUNCTION public.device_id()
-RETURNS TEXT AS $$
-  -- In a future update, this will read from auth.jwt() -> 'device_id'
-  -- For now, returns null (all policies will use profile_id match)
-  SELECT NULL::TEXT;
-$$ LANGUAGE sql STABLE;
-
--- Profiles: users can only read/update their own profile
--- (profile_id = the requesting user's device_id)
+-- Profiles
 CREATE POLICY "Users can view own profile" ON profiles
-  FOR SELECT USING (true); -- Allow checking if profile exists
-
+  FOR SELECT USING (id = auth.uid());
 CREATE POLICY "Users can insert own profile" ON profiles
-  FOR INSERT WITH CHECK (true); -- Allow creating own profile
-
+  FOR INSERT WITH CHECK (id = auth.uid());
 CREATE POLICY "Users can update own profile" ON profiles
-  FOR UPDATE USING (true) WITH CHECK (true); -- Allow updating own profile
+  FOR UPDATE USING (id = auth.uid()) WITH CHECK (id = auth.uid());
 
--- Transactions: scoped by profile_id (client filters by device_id)
--- These are more restrictive - users can only access their own data
+-- Transactions
 CREATE POLICY "Users can view own transactions" ON transactions
-  FOR SELECT USING (true); -- Will tighten after auth migration
-
+  FOR SELECT USING (user_id = auth.uid());
 CREATE POLICY "Users can insert own transactions" ON transactions
-  FOR INSERT WITH CHECK (true); -- Will tighten after auth migration
-
+  FOR INSERT WITH CHECK (user_id = auth.uid());
 CREATE POLICY "Users can update own transactions" ON transactions
-  FOR UPDATE USING (true) WITH CHECK (true); -- Will tighten after auth migration
-
+  FOR UPDATE USING (user_id = auth.uid()) WITH CHECK (user_id = auth.uid());
 CREATE POLICY "Users can delete own transactions" ON transactions
-  FOR DELETE USING (true); -- Will tighten after auth migration
+  FOR DELETE USING (user_id = auth.uid());
 
--- Shifts: scoped by profile_id
+-- Shifts
 CREATE POLICY "Users can view own shifts" ON shifts
-  FOR SELECT USING (true);
-
+  FOR SELECT USING (user_id = auth.uid());
 CREATE POLICY "Users can insert own shifts" ON shifts
-  FOR INSERT WITH CHECK (true);
-
+  FOR INSERT WITH CHECK (user_id = auth.uid());
 CREATE POLICY "Users can update own shifts" ON shifts
-  FOR UPDATE USING (true) WITH CHECK (true);
-
+  FOR UPDATE USING (user_id = auth.uid()) WITH CHECK (user_id = auth.uid());
 CREATE POLICY "Users can delete own shifts" ON shifts
-  FOR DELETE USING (true);
+  FOR DELETE USING (user_id = auth.uid());
 
--- Recurring: scoped by profile_id
+-- Recurring
 CREATE POLICY "Users can view own recurring" ON recurring
-  FOR SELECT USING (true);
-
+  FOR SELECT USING (user_id = auth.uid());
 CREATE POLICY "Users can insert own recurring" ON recurring
-  FOR INSERT WITH CHECK (true);
-
+  FOR INSERT WITH CHECK (user_id = auth.uid());
 CREATE POLICY "Users can update own recurring" ON recurring
-  FOR UPDATE USING (true) WITH CHECK (true);
-
+  FOR UPDATE USING (user_id = auth.uid()) WITH CHECK (user_id = auth.uid());
 CREATE POLICY "Users can delete own recurring" ON recurring
-  FOR DELETE USING (true);
+  FOR DELETE USING (user_id = auth.uid());
 
--- ============================================================
--- NOTE ON THE ABOVE POLICIES:
---
--- The current policies still use USING (true) as an interim
--- measure because the app uses device-id based identity
--- stored in localStorage (not authenticated Supabase Auth).
---
--- TO FULLY SECURE: Migrate to Supabase Anonymous Auth
--- then change all policies from USING (true) to:
---   USING (profile_id = auth.uid()::text)
---
--- This ensures the database itself enforces data isolation,
--- even if the client is compromised.
---
--- Steps to complete the security migration:
--- 1. Enable Supabase Anonymous Auth in Dashboard
--- 2. Update useSupabase.js to sign in anonymously
--- 3. Replace USING (true) with USING (profile_id = auth.uid()::text)
--- ============================================================
+-- Budgets
+CREATE POLICY "Users can view own budgets" ON budgets
+  FOR SELECT USING (user_id = auth.uid());
+CREATE POLICY "Users can insert own budgets" ON budgets
+  FOR INSERT WITH CHECK (user_id = auth.uid());
+CREATE POLICY "Users can update own budgets" ON budgets
+  FOR UPDATE USING (user_id = auth.uid()) WITH CHECK (user_id = auth.uid());
+CREATE POLICY "Users can delete own budgets" ON budgets
+  FOR DELETE USING (user_id = auth.uid());
+
+-- Savings Goals
+CREATE POLICY "Users can view own savings_goals" ON savings_goals
+  FOR SELECT USING (user_id = auth.uid());
+CREATE POLICY "Users can insert own savings_goals" ON savings_goals
+  FOR INSERT WITH CHECK (user_id = auth.uid());
+CREATE POLICY "Users can update own savings_goals" ON savings_goals
+  FOR UPDATE USING (user_id = auth.uid()) WITH CHECK (user_id = auth.uid());
+CREATE POLICY "Users can delete own savings_goals" ON savings_goals
+  FOR DELETE USING (user_id = auth.uid());
+
+-- IOUs
+CREATE POLICY "Users can view own ious" ON ious
+  FOR SELECT USING (user_id = auth.uid());
+CREATE POLICY "Users can insert own ious" ON ious
+  FOR INSERT WITH CHECK (user_id = auth.uid());
+CREATE POLICY "Users can update own ious" ON ious
+  FOR UPDATE USING (user_id = auth.uid()) WITH CHECK (user_id = auth.uid());
+CREATE POLICY "Users can delete own ious" ON ious
+  FOR DELETE USING (user_id = auth.uid());
+
+-- Accounts
+CREATE POLICY "Users can view own accounts" ON accounts
+  FOR SELECT USING (user_id = auth.uid());
+CREATE POLICY "Users can insert own accounts" ON accounts
+  FOR INSERT WITH CHECK (user_id = auth.uid());
+CREATE POLICY "Users can update own accounts" ON accounts
+  FOR UPDATE USING (user_id = auth.uid()) WITH CHECK (user_id = auth.uid());
+CREATE POLICY "Users can delete own accounts" ON accounts
+  FOR DELETE USING (user_id = auth.uid());
+
+-- Members
+CREATE POLICY "Users can view own members" ON members
+  FOR SELECT USING (user_id = auth.uid());
+CREATE POLICY "Users can insert own members" ON members
+  FOR INSERT WITH CHECK (user_id = auth.uid());
+CREATE POLICY "Users can update own members" ON members
+  FOR UPDATE USING (user_id = auth.uid()) WITH CHECK (user_id = auth.uid());
+CREATE POLICY "Users can delete own members" ON members
+  FOR DELETE USING (user_id = auth.uid());
 
 -- ============================================================
 -- UPDATED_AT trigger
@@ -230,28 +300,21 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+DROP TRIGGER IF EXISTS profiles_updated_at ON profiles;
 CREATE TRIGGER profiles_updated_at
   BEFORE UPDATE ON profiles
   FOR EACH ROW EXECUTE FUNCTION update_updated_at();
 
 -- ============================================================
--- WEBAUTHN CREDENTIALS RLS
+-- REALTIME PUBLICATION (for cross-device sync)
 -- ============================================================
-ALTER TABLE webauthn_credentials ENABLE ROW LEVEL SECURITY;
-
-CREATE POLICY "Users can view own credentials" ON webauthn_credentials
-  FOR SELECT USING (true);
-
-CREATE POLICY "Users can insert own credentials" ON webauthn_credentials
-  FOR INSERT WITH CHECK (true);
-
-CREATE POLICY "Users can update own credentials" ON webauthn_credentials
-  FOR UPDATE USING (true) WITH CHECK (true);
-
-CREATE POLICY "Users can delete own credentials" ON webauthn_credentials
-  FOR DELETE USING (true);
-
--- ============================================================
--- INDEX for webauthn credentials
--- ============================================================
-CREATE INDEX IF NOT EXISTS idx_webauthn_profile ON webauthn_credentials(profile_id);
+-- Add tables to Supabase realtime publication
+ALTER PUBLICATION supabase_realtime ADD TABLE transactions;
+ALTER PUBLICATION supabase_realtime ADD TABLE shifts;
+ALTER PUBLICATION supabase_realtime ADD TABLE recurring;
+ALTER PUBLICATION supabase_realtime ADD TABLE budgets;
+ALTER PUBLICATION supabase_realtime ADD TABLE savings_goals;
+ALTER PUBLICATION supabase_realtime ADD TABLE ious;
+ALTER PUBLICATION supabase_realtime ADD TABLE accounts;
+ALTER PUBLICATION supabase_realtime ADD TABLE members;
+ALTER PUBLICATION supabase_realtime ADD TABLE profiles;

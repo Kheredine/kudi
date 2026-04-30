@@ -2,12 +2,12 @@
 import { useRoute } from 'vue-router'
 import { useFinance } from '../composables/useFinance'
 import { usePrivacy } from '../composables/usePrivacy'
-import { useAuth } from '../composables/useAuth'
+import { useProfile, getAvatarMeta } from '../composables/useProfile'
 
 const route = useRoute()
 const { balance, state, getCurrencySymbol } = useFinance()
 const { isUnlocked } = usePrivacy()
-const { user } = useAuth()
+const { profile } = useProfile()
 
 function formatMoney(amount) {
   const sym = getCurrencySymbol(state.settings.baseCurrency)
@@ -99,11 +99,11 @@ const navItems = [
           ? 'bg-primary/10 text-primary'
           : 'text-text-secondary hover:bg-surface hover:text-text-primary'"
       >
-        <div class="w-8 h-8 rounded-full bg-primary/15 flex items-center justify-center text-sm">
-          {{ user?.avatar || '👤' }}
+        <div class="w-8 h-8 rounded-full bg-gradient-to-br flex items-center justify-center text-sm" :class="getAvatarMeta(profile.avatar).gradient">
+          {{ getAvatarMeta(profile.avatar).emoji }}
         </div>
         <div class="flex-1 min-w-0">
-          <p class="text-sm font-medium truncate">{{ user?.username || 'Profile' }}</p>
+          <p class="text-sm font-medium truncate">{{ profile.username }}</p>
         </div>
         <svg class="w-4 h-4 opacity-40" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
           <path stroke-linecap="round" stroke-linejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />

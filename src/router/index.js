@@ -1,4 +1,5 @@
 import { createRouter, createWebHistory } from 'vue-router'
+import { supabase } from '../composables/useSupabase'
 
 const routes = [
   {
@@ -56,15 +57,13 @@ const router = createRouter({
   routes,
 })
 
-// Auth guard — redirect to /auth if not authenticated
+// Auth guard — check Supabase session
 router.beforeEach(async (to) => {
   if (to.meta.requiresAuth === false) return true
 
-  // Check if user has completed auth by checking localStorage flag
-  // (The auth composable manages this state)
-  const authCompleted = localStorage.getItem('kudi-auth-completed')
+  const { data: { session } } = await supabase.auth.getSession()
 
-  if (!authCompleted && to.name !== 'Auth') {
+  if (!session && to.name !== 'Auth') {
     return { name: 'Auth' }
   }
 

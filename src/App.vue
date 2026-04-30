@@ -1,16 +1,21 @@
 <script setup>
-import { onMounted, onUnmounted, computed } from 'vue'
+import { onMounted, onUnmounted, computed, ref } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
+import { supabase } from './composables/useSupabase'
+import { useFinance } from './composables/useFinance'
+import { migrateLocalData } from './composables/useStorage'
+import { fetchProfile } from './composables/useProfile'
 import SideNav from './components/SideNav.vue'
 import BottomNav from './components/BottomNav.vue'
 import RightPanel from './components/RightPanel.vue'
 import FabButton from './components/FabButton.vue'
 import InstallPrompt from './components/InstallPrompt.vue'
-import { ref } from 'vue'
 
 const router = useRouter()
 const route = useRoute()
+const { initData, dataLoaded, autoGenerateRecurring, applyTheme } = useFinance()
 const showAddModal = ref(false)
+const appReady = ref(false)
 
 const isAuthRoute = computed(() => route.path === '/auth')
 
@@ -23,17 +28,66 @@ function handleKeydown(e) {
   }
 }
 
+// Listen for Supabase auth state changes and initialize data
+let authUnsubscribe = null
+
 onMounted(() => {
   window.addEventListener('keydown', handleKeydown)
+
+  authUnsubscribe = supabase.auth.onAuthStateChange(async (event, session) => {
+    if (event === 'SIGNED_IN' || (event === 'INITIAL_SESSION' && session)) {
+      const userId = session.user.id
+
+      // One-time localStorage → Supabase migration
+      try {
+        await migrateLocalData(userId)
+      } catch (err) {
+        console.warn('[Migration] skipped:', err.message)
+      }
+
+      // Load user data from Supabase
+      if (!dataLoaded.value) {
+        await fetchProfile(userId)
+        await initData(userId)
+        autoGenerateRecurring()
+      }
+
+      appReady.value = true
+
+      // Redirect away from auth page if already signed in
+      if (route.path === '/auth') {
+        router.replace('/')
+      }
+    } else if (event === 'SIGNED_OUT') {
+      appReady.value = false
+      if (route.path !== '/auth') {
+        router.replace('/auth')
+      }
+    } else if (event === 'INITIAL_SESSION' && !session) {
+      appReady.value = true
+    }
+  }).data.unsubscribe
 })
 
 onUnmounted(() => {
   window.removeEventListener('keydown', handleKeydown)
+  if (authUnsubscribe) authUnsubscribe()
 })
 </script>
 
 <template>
-  <div class="min-h-screen bg-bg">
+  <!-- Loading screen while checking auth -->
+  <div v-if="!appReady" class="min-h-screen bg-bg flex items-center justify-center">
+    <div class="flex flex-col items-center gap-3">
+      <div class="w-12 h-12 rounded-2xl bg-primary/15 flex items-center justify-center animate-pulse">
+        <span class="text-primary font-bold text-2xl">K</span>
+      </div>
+      <div class="w-6 h-6 border-2 border-primary/30 border-t-primary rounded-full animate-spin"></div>
+    </div>
+  </div>
+
+  <!-- Main app -->
+  <div v-else class="min-h-screen bg-bg">
     <!-- Side nav (desktop only) -->
     <SideNav v-if="!isAuthRoute" />
 
