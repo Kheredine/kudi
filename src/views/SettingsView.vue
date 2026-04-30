@@ -13,6 +13,47 @@ const { getUserId, logout } = useAuth()
 const showExport = ref(false)
 const resetting = ref(false)
 
+// ── Pay Schedule helpers ─────────────────────────────────────
+function togglePaycheckMode() {
+  const next = state.settings.paycheckMode === 'period' ? 'none' : 'period'
+  if (next === 'period' && !state.settings.payPeriods?.length) {
+    applyPreset()
+    updateSettings({ paycheckMode: next })
+  } else {
+    updateSettings({ paycheckMode: next })
+  }
+}
+
+function applyPreset() {
+  updateSettings({
+    payPeriods: [
+      { id: 1, label: 'Period 1', startDay: 1,  endDay: 15, payDay: 15 },
+      { id: 2, label: 'Period 2', startDay: 16, endDay: 31, payDay: 1  },
+    ],
+    payday1: 15,
+    payday2: 1,
+  })
+}
+
+function addPeriod() {
+  const periods = [...(state.settings.payPeriods || [])]
+  const newId = periods.length ? Math.max(...periods.map(p => p.id)) + 1 : 1
+  updateSettings({ payPeriods: [...periods, { id: newId, label: `Period ${newId}`, startDay: 1, endDay: 15, payDay: 15 }] })
+}
+
+function removePeriod(id) {
+  updateSettings({ payPeriods: (state.settings.payPeriods || []).filter(p => p.id !== id) })
+}
+
+function updatePeriod(id, field, raw) {
+  const value = ['startDay','endDay','payDay'].includes(field) ? (parseInt(raw) || 1) : raw
+  const periods = (state.settings.payPeriods || []).map(p => p.id === id ? { ...p, [field]: value } : p)
+  const synced = {}
+  if (periods[0]) synced.payday1 = periods[0].payDay
+  if (periods[1]) synced.payday2 = periods[1].payDay
+  updateSettings({ payPeriods: periods, ...synced })
+}
+
 async function handleReset() {
   if (!confirm('Reset all data? This cannot be undone.')) return
   resetting.value = true
@@ -48,25 +89,96 @@ async function handleReset() {
             @input="updateSettings({ userName: $event.target.value })"
           />
         </div>
-        <div class="grid grid-cols-2 gap-3">
+      </div>
+
+      <!-- Pay Schedule -->
+      <div class="bg-card border border-border rounded-2xl p-4 space-y-4">
+        <div class="flex items-center justify-between">
           <div>
-            <label class="text-xs font-medium text-text-secondary mb-1.5 block">1st Payday</label>
-            <input
-              :value="state.settings.payday1 || 10"
-              type="number" min="1" max="31"
-              class="w-full bg-surface border border-border rounded-xl px-4 py-3 text-sm text-text-primary focus:outline-none focus:border-primary/50"
-              @input="updateSettings({ payday1: parseInt($event.target.value) || 10 })"
-            />
+            <h3 class="text-xs font-semibold text-text-secondary uppercase tracking-wider">Pay Schedule</h3>
+            <p class="text-[11px] text-text-secondary mt-0.5">Group shifts into pay periods</p>
           </div>
-          <div>
-            <label class="text-xs font-medium text-text-secondary mb-1.5 block">2nd Payday</label>
-            <input
-              :value="state.settings.payday2 || 25"
-              type="number" min="1" max="31"
-              class="w-full bg-surface border border-border rounded-xl px-4 py-3 text-sm text-text-primary focus:outline-none focus:border-primary/50"
-              @input="updateSettings({ payday2: parseInt($event.target.value) || 25 })"
+          <!-- Toggle -->
+          <button
+            class="relative w-11 h-6 rounded-full transition-colors duration-200 focus:outline-none"
+            :class="state.settings.paycheckMode === 'period' ? 'bg-primary' : 'bg-surface border border-border'"
+            @click="togglePaycheckMode"
+          >
+            <span
+              class="absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform duration-200"
+              :class="state.settings.paycheckMode === 'period' ? 'translate-x-5' : 'translate-x-0'"
             />
+          </button>
+        </div>
+
+        <!-- Period editor -->
+        <div v-if="state.settings.paycheckMode === 'period'" class="space-y-3">
+          <!-- Preset shortcut -->
+          <button
+            class="text-xs text-primary hover:underline"
+            @click="applyPreset"
+          >
+            Apply standard preset (1–15 · 16–end of month)
+          </button>
+
+          <!-- Period cards -->
+          <div
+            v-for="period in (state.settings.payPeriods || [])"
+            :key="period.id"
+            class="bg-surface rounded-xl p-3 space-y-3"
+          >
+            <div class="flex items-center justify-between">
+              <input
+                :value="period.label"
+                type="text"
+                class="bg-transparent text-xs font-semibold text-text-primary focus:outline-none w-32"
+                @input="updatePeriod(period.id, 'label', $event.target.value)"
+              />
+              <button class="text-[11px] text-danger hover:underline" @click="removePeriod(period.id)">Remove</button>
+            </div>
+            <div class="grid grid-cols-3 gap-2">
+              <div>
+                <label class="text-[10px] text-text-secondary block mb-1">Start day</label>
+                <input
+                  :value="period.startDay"
+                  type="number" min="1" max="31"
+                  class="w-full bg-card border border-border rounded-lg px-2 py-2 text-sm text-text-primary text-center focus:outline-none focus:border-primary/50"
+                  @input="updatePeriod(period.id, 'startDay', $event.target.value)"
+                />
+              </div>
+              <div>
+                <label class="text-[10px] text-text-secondary block mb-1">End day</label>
+                <input
+                  :value="period.endDay"
+                  type="number" min="1" max="31"
+                  class="w-full bg-card border border-border rounded-lg px-2 py-2 text-sm text-text-primary text-center focus:outline-none focus:border-primary/50"
+                  @input="updatePeriod(period.id, 'endDay', $event.target.value)"
+                />
+              </div>
+              <div>
+                <label class="text-[10px] text-text-secondary block mb-1">Pay day</label>
+                <input
+                  :value="period.payDay"
+                  type="number" min="1" max="31"
+                  class="w-full bg-card border border-border rounded-lg px-2 py-2 text-sm text-text-primary text-center focus:outline-none focus:border-primary/50"
+                  @input="updatePeriod(period.id, 'payDay', $event.target.value)"
+                />
+              </div>
+            </div>
+            <p class="text-[10px] text-text-secondary">
+              Shifts on days {{ period.startDay }}–{{ period.endDay >= 28 ? 'end' : period.endDay }},
+              paid on the {{ period.payDay }}{{ period.payDay < period.startDay ? ' (next month)' : '' }}
+            </p>
           </div>
+
+          <!-- Add period -->
+          <button
+            v-if="(state.settings.payPeriods || []).length < 4"
+            class="w-full py-2.5 border border-dashed border-border rounded-xl text-xs text-text-secondary hover:border-primary/40 hover:text-primary transition-colors"
+            @click="addPeriod"
+          >
+            + Add pay period
+          </button>
         </div>
       </div>
 

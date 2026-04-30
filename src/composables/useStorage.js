@@ -112,6 +112,8 @@ export async function loadAllData(userId) {
         language: profile.language,
         theme: profile.theme,
         activeAccountId: profile.active_account_id,
+        paycheckMode: profile.paycheck_mode || 'none',
+        payPeriods: profile.pay_periods || [],
       } : null,
       transactions: (transactions || []).map(t => ({
         id: t.id,
@@ -214,6 +216,8 @@ export async function upsertProfile(userId, settings) {
     theme: settings.theme || 'dark',
     active_account_id: settings.activeAccountId || null,
     last_recurring_gen: settings.lastRecurringGen || null,
+    paycheck_mode: settings.paycheckMode || 'none',
+    pay_periods: settings.payPeriods || [],
     onboarded: true,
   }, { onConflict: 'id' })
 

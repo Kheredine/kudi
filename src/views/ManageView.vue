@@ -6,6 +6,7 @@ import RecurringItem from '../components/RecurringItem.vue'
 const {
   state, getCurrencySymbol,
   addShift, deleteShift,
+  paycheckSummary,
   toggleRecurring, addRecurring,
   setBudget, deleteBudget, budgetStatus,
   addSavingsGoal, deleteSavingsGoal, savingsGoalStatus,
@@ -31,11 +32,53 @@ const activeTab = ref('shifts')
 // ── Shifts ──────────────────────────────────────────
 const showShiftForm = ref(false)
 const shiftForm = ref({ date: new Date().toISOString().split('T')[0], start_time: '09:00', end_time: '17:00', break_hours: 1, hourly_rate: 25 })
+const shiftFilter = ref('all') // 'all' | 'month' | 'week'
+const expandedGroups = ref(new Set())
 
 function handleAddShift() {
   addShift(shiftForm.value)
   showShiftForm.value = false
   shiftForm.value = { date: new Date().toISOString().split('T')[0], start_time: '09:00', end_time: '17:00', break_hours: 1, hourly_rate: 25 }
+}
+
+function toggleGroup(key) {
+  if (expandedGroups.value.has(key)) {
+    expandedGroups.value.delete(key)
+  } else {
+    expandedGroups.value.add(key)
+  }
+  expandedGroups.value = new Set(expandedGroups.value)
+}
+
+const filteredShifts = computed(() => {
+  const shifts = paycheckSummary.value.shifts || []
+  if (shiftFilter.value === 'all') return shifts
+  const now = new Date()
+  if (shiftFilter.value === 'month') {
+    const start = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`
+    return shifts.filter(s => s.date >= start)
+  }
+  if (shiftFilter.value === 'week') {
+    const day = now.getDay()
+    const weekStart = new Date(now)
+    weekStart.setDate(now.getDate() - day)
+    const start = weekStart.toISOString().split('T')[0]
+    return shifts.filter(s => s.date >= start)
+  }
+  return shifts
+})
+
+function fmtPayDate(dateStr) {
+  if (!dateStr) return '—'
+  const d = new Date(dateStr + 'T00:00:00')
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+}
+
+function fmtPeriodRange(start, end) {
+  const s = new Date(start + 'T00:00:00')
+  const e = new Date(end + 'T00:00:00')
+  const opts = { month: 'short', day: 'numeric' }
+  return `${s.toLocaleDateString('en-US', opts)} – ${e.toLocaleDateString('en-US', opts)}`
 }
 
 function calcShiftHours(s) {
@@ -198,6 +241,7 @@ function dueBadge(iou) {
         <button class="px-3 py-1.5 rounded-lg bg-primary/10 text-primary text-xs font-medium hover:bg-primary/20" @click="showShiftForm = !showShiftForm">+ Add Shift</button>
       </div>
 
+      <!-- Add shift form -->
       <div v-if="showShiftForm" class="bg-card border border-border rounded-2xl p-4 mb-3 space-y-3">
         <input v-model="shiftForm.date" type="date" class="w-full bg-surface border border-border rounded-xl px-3 py-2.5 text-sm text-text-primary focus:outline-none focus:border-primary/50" />
         <div class="grid grid-cols-2 gap-3">
@@ -223,24 +267,123 @@ function dueBadge(iou) {
         <button class="w-full bg-primary text-white font-semibold py-2.5 rounded-xl text-sm" @click="handleAddShift">Add Shift</button>
       </div>
 
-      <div class="space-y-2">
-        <div v-for="shift in [...state.shifts].sort((a,b) => b.date.localeCompare(a.date))" :key="shift.id" class="bg-card border border-border rounded-2xl px-4 py-3 flex items-center gap-3">
-          <div class="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center shrink-0">
-            <svg class="w-5 h-5 text-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8">
-              <path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z" />
-            </svg>
+      <!-- ── MODE: none — simple totals + date filter ── -->
+      <template v-if="paycheckSummary.mode === 'none'">
+        <!-- Summary bar -->
+        <div v-if="state.shifts.length" class="bg-card border border-border rounded-2xl px-4 py-3 mb-3 flex items-center justify-between">
+          <div>
+            <p class="text-xs text-text-secondary">Total earnings</p>
+            <p class="text-lg font-bold text-primary">{{ sym }}{{ paycheckSummary.totalAmount.toFixed(2) }}</p>
           </div>
-          <div class="flex-1 min-w-0">
-            <p class="text-sm font-medium text-text-primary">{{ shift.date }}</p>
-            <p class="text-xs text-text-secondary">{{ shift.start_time }}–{{ shift.end_time }} · {{ calcShiftHours(shift).toFixed(1) }}h · {{ sym }}{{ shift.hourly_rate }}/hr</p>
+          <div class="text-right">
+            <p class="text-xs text-text-secondary">Total hours</p>
+            <p class="text-lg font-bold text-text-primary">{{ paycheckSummary.totalHours }}h</p>
           </div>
-          <p class="text-sm font-semibold text-primary shrink-0">{{ sym }}{{ (calcShiftHours(shift) * shift.hourly_rate).toFixed(2) }}</p>
-          <button class="w-8 h-8 rounded-lg hover:bg-danger/10 text-text-secondary hover:text-danger flex items-center justify-center shrink-0" @click="deleteShift(shift.id)">
-            <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
-          </button>
         </div>
-      </div>
-      <div v-if="state.shifts.length === 0" class="text-center py-12 text-text-secondary text-sm">No shifts added yet</div>
+
+        <!-- Date filter pills -->
+        <div v-if="state.shifts.length" class="flex gap-2 mb-3">
+          <button
+            v-for="f in [['all','All'],['month','This Month'],['week','This Week']]"
+            :key="f[0]"
+            class="px-3 py-1.5 rounded-lg text-xs font-medium transition-all"
+            :class="shiftFilter === f[0] ? 'bg-primary text-white' : 'bg-surface text-text-secondary'"
+            @click="shiftFilter = f[0]"
+          >{{ f[1] }}</button>
+        </div>
+
+        <!-- Flat shift list -->
+        <div class="space-y-2">
+          <div
+            v-for="shift in [...filteredShifts].sort((a,b) => b.date.localeCompare(a.date))"
+            :key="shift.id"
+            class="bg-card border border-border rounded-2xl px-4 py-3 flex items-center gap-3"
+          >
+            <div class="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center shrink-0">
+              <svg class="w-5 h-5 text-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+            </div>
+            <div class="flex-1 min-w-0">
+              <p class="text-sm font-medium text-text-primary">{{ shift.date }}</p>
+              <p class="text-xs text-text-secondary">{{ shift.start_time }}–{{ shift.end_time }} · {{ shift.calculated_hours }}h · {{ sym }}{{ shift.hourly_rate }}/hr</p>
+            </div>
+            <p class="text-sm font-semibold text-primary shrink-0">{{ sym }}{{ shift.calculated_income.toFixed(2) }}</p>
+            <button class="w-8 h-8 rounded-lg hover:bg-danger/10 text-text-secondary hover:text-danger flex items-center justify-center shrink-0" @click="deleteShift(shift.id)">
+              <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+            </button>
+          </div>
+        </div>
+        <div v-if="!filteredShifts.length" class="text-center py-12 text-text-secondary text-sm">
+          {{ state.shifts.length ? 'No shifts in this period' : 'No shifts added yet' }}
+        </div>
+      </template>
+
+      <!-- ── MODE: period — paycheck cards ── -->
+      <template v-else>
+        <!-- Overall summary -->
+        <div v-if="paycheckSummary.groups.length" class="bg-card border border-border rounded-2xl px-4 py-3 mb-3 flex items-center justify-between">
+          <div>
+            <p class="text-xs text-text-secondary">All-time earnings</p>
+            <p class="text-lg font-bold text-primary">{{ sym }}{{ paycheckSummary.totalAmount.toFixed(2) }}</p>
+          </div>
+          <div class="text-right">
+            <p class="text-xs text-text-secondary">Total hours</p>
+            <p class="text-lg font-bold text-text-primary">{{ paycheckSummary.totalHours }}h</p>
+          </div>
+        </div>
+
+        <!-- Paycheck cards -->
+        <div class="space-y-3">
+          <div
+            v-for="group in paycheckSummary.groups"
+            :key="group.key"
+            class="bg-card border border-border rounded-2xl overflow-hidden"
+          >
+            <!-- Card header -->
+            <button
+              class="w-full px-4 py-4 flex items-start gap-3 text-left hover:bg-surface/50 transition-colors"
+              @click="toggleGroup(group.key)"
+            >
+              <!-- Pay status dot -->
+              <div class="mt-0.5 w-2.5 h-2.5 rounded-full shrink-0" :class="group.isPast ? 'bg-primary' : 'bg-warning'" />
+              <div class="flex-1 min-w-0">
+                <div class="flex items-center gap-2 mb-0.5">
+                  <p class="text-sm font-semibold text-text-primary">{{ group.label }}</p>
+                  <span class="text-[10px] px-1.5 py-0.5 rounded-md" :class="group.isPast ? 'bg-primary/10 text-primary' : 'bg-warning/10 text-warning'">
+                    {{ group.isPast ? 'Paid' : 'Upcoming' }}
+                  </span>
+                </div>
+                <p class="text-xs text-text-secondary">{{ fmtPeriodRange(group.start, group.end) }}</p>
+                <p class="text-xs text-text-secondary">Pay date: {{ fmtPayDate(group.payDate) }}</p>
+              </div>
+              <div class="text-right shrink-0">
+                <p class="text-base font-bold text-primary">{{ sym }}{{ group.totalAmount.toFixed(2) }}</p>
+                <p class="text-xs text-text-secondary">{{ group.totalHours }}h · {{ group.shiftCount }} shift{{ group.shiftCount !== 1 ? 's' : '' }}</p>
+              </div>
+            </button>
+
+            <!-- Expanded shifts -->
+            <div v-if="expandedGroups.has(group.key)" class="border-t border-border divide-y divide-border/50">
+              <div
+                v-for="shift in group.shifts"
+                :key="shift.id"
+                class="px-4 py-3 flex items-center gap-3"
+              >
+                <div class="flex-1 min-w-0">
+                  <p class="text-xs font-medium text-text-primary">{{ shift.date }}</p>
+                  <p class="text-[11px] text-text-secondary">{{ shift.start_time }}–{{ shift.end_time }} · {{ shift.calculated_hours }}h</p>
+                </div>
+                <p class="text-xs font-semibold text-primary shrink-0">{{ sym }}{{ shift.calculated_income.toFixed(2) }}</p>
+                <button class="w-7 h-7 rounded-lg hover:bg-danger/10 text-text-secondary hover:text-danger flex items-center justify-center shrink-0" @click="deleteShift(shift.id)">
+                  <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div v-if="!paycheckSummary.groups.length" class="text-center py-12 text-text-secondary text-sm">No shifts added yet</div>
+      </template>
     </div>
 
     <!-- ── RECURRING ── -->

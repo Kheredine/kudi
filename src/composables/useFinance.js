@@ -96,6 +96,8 @@ function createDefaultState() {
       language: 'en',
       theme: 'dark',
       activeAccountId: null,
+      paycheckMode: 'none',
+      payPeriods: [],
     },
     accounts: [],
     members: [],
@@ -281,6 +283,76 @@ const paydayGroups = computed(() => {
       shiftCount: g.shifts.length,
     }))
     .sort((a, b) => a.payDate.localeCompare(b.payDate))
+})
+
+// ============================================================
+// PAYCHECK SUMMARY (respects paycheckMode)
+// ============================================================
+
+const paycheckSummary = computed(() => {
+  const mode = state.settings.paycheckMode || 'none'
+  const periods = state.settings.payPeriods || []
+  const all = shiftIncomes.value
+
+  const totalHours = Math.round(all.reduce((s, sh) => s + sh.calculated_hours, 0) * 100) / 100
+  const totalAmount = Math.round(all.reduce((s, sh) => s + sh.calculated_income, 0) * 100) / 100
+
+  if (mode === 'none' || !periods.length) {
+    return { mode: 'none', totalHours, totalAmount, shifts: all }
+  }
+
+  const groups = {}
+
+  all.forEach(shift => {
+    const d = new Date(shift.date + 'T00:00:00')
+    const day = d.getDate()
+    const month = d.getMonth()
+    const year = d.getFullYear()
+    const lastDayOfMonth = new Date(year, month + 1, 0).getDate()
+
+    for (const p of periods) {
+      const effectiveEnd = p.endDay >= 28 ? lastDayOfMonth : p.endDay
+      if (day >= p.startDay && day <= effectiveEnd) {
+        const mm = String(month + 1).padStart(2, '0')
+        const key = `${year}-${mm}-p${p.id}`
+        if (!groups[key]) {
+          // payDay < startDay means it falls in the following month
+          let pYear = year, pMonth = month + 1
+          if (p.payDay < p.startDay) {
+            pMonth++
+            if (pMonth > 12) { pMonth = 1; pYear++ }
+          }
+          groups[key] = {
+            key,
+            periodId: p.id,
+            label: p.label || `Period ${p.id}`,
+            start: `${year}-${mm}-${String(p.startDay).padStart(2, '0')}`,
+            end: `${year}-${mm}-${String(effectiveEnd).padStart(2, '0')}`,
+            payDate: `${pYear}-${String(pMonth).padStart(2, '0')}-${String(p.payDay).padStart(2, '0')}`,
+            shifts: [],
+            totalHours: 0,
+            totalAmount: 0,
+          }
+        }
+        groups[key].shifts.push(shift)
+        groups[key].totalHours += shift.calculated_hours
+        groups[key].totalAmount += shift.calculated_income
+        break
+      }
+    }
+  })
+
+  const groupList = Object.values(groups)
+    .map(g => ({
+      ...g,
+      totalHours: Math.round(g.totalHours * 100) / 100,
+      totalAmount: Math.round(g.totalAmount * 100) / 100,
+      isPast: g.payDate < today(),
+      shiftCount: g.shifts.length,
+    }))
+    .sort((a, b) => b.payDate.localeCompare(a.payDate))
+
+  return { mode: 'period', groups: groupList, totalHours, totalAmount }
 })
 
 // ============================================================
@@ -1406,6 +1478,7 @@ export function useFinance() {
     shiftIncomes,
     futureShiftIncome,
     paydayGroups,
+    paycheckSummary,
 
     // Computed - IOUs
     iouSummary,
