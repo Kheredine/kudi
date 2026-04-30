@@ -5,6 +5,7 @@ import { useFinance } from './useFinance'
 // Security: OpenAI calls now go through our Supabase Edge Function proxy
 // The API key lives server-side only and is never exposed to the browser.
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || ''
+const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || ''
 const PROXY_URL = `${SUPABASE_URL}/functions/v1/openai-proxy`
 
 // Cache AI insights for the day
@@ -64,6 +65,7 @@ RULES:
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
         },
         body: JSON.stringify({
           messages: [
