@@ -77,7 +77,10 @@ function fmt(n) {
             <p class="text-sm font-semibold text-text-primary truncate">{{ nearestIncome.title }}</p>
           </div>
           <div class="text-right shrink-0">
-            <p class="text-base font-bold text-primary">{{ fmt(nearestIncome.amount) }}</p>
+            <p class="text-base font-bold text-primary transition-all duration-300"
+               :class="{ 'blur-md select-none': !isUnlocked }">
+              {{ fmt(nearestIncome.amount) }}
+            </p>
             <p class="text-[10px] text-text-secondary">{{ daysAway(nearestIncome.dueDate) }}</p>
           </div>
           <svg class="w-4 h-4 text-text-secondary shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
@@ -91,7 +94,7 @@ function fmt(n) {
     <PrivacyOverlay class="px-5 lg:px-8 mb-6 lg:mb-8">
       <div class="flex gap-3 overflow-x-auto pb-2 snap-x snap-mandatory scrollbar-hide md:grid md:grid-cols-3 md:overflow-visible lg:gap-4">
         <!-- Income -->
-        <div class="min-w-[140px] snap-start bg-card border border-border rounded-2xl p-4 md:min-w-0 hover:border-primary/20 transition-colors duration-200">
+        <div class="min-w-35 snap-start bg-card border border-border rounded-2xl p-4 md:min-w-0 hover:border-primary/20 transition-colors duration-200">
           <div class="flex items-center gap-2 mb-2">
             <div class="w-7 h-7 rounded-lg bg-primary/10 flex items-center justify-center">
               <svg class="w-3.5 h-3.5 text-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
@@ -104,7 +107,7 @@ function fmt(n) {
         </div>
 
         <!-- Expenses -->
-        <div class="min-w-[140px] snap-start bg-card border border-border rounded-2xl p-4 md:min-w-0 hover:border-danger/20 transition-colors duration-200">
+        <div class="min-w-35 snap-start bg-card border border-border rounded-2xl p-4 md:min-w-0 hover:border-danger/20 transition-colors duration-200">
           <div class="flex items-center gap-2 mb-2">
             <div class="w-7 h-7 rounded-lg bg-danger/10 flex items-center justify-center">
               <svg class="w-3.5 h-3.5 text-danger" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
@@ -118,7 +121,7 @@ function fmt(n) {
         </div>
 
         <!-- Savings -->
-        <div class="min-w-[140px] snap-start bg-card border border-border rounded-2xl p-4 md:min-w-0 hover:border-blue-400/20 transition-colors duration-200">
+        <div class="min-w-35 snap-start bg-card border border-border rounded-2xl p-4 md:min-w-0 hover:border-blue-400/20 transition-colors duration-200">
           <div class="flex items-center gap-2 mb-2">
             <div class="w-7 h-7 rounded-lg bg-blue-400/10 flex items-center justify-center">
               <svg class="w-3.5 h-3.5 text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">

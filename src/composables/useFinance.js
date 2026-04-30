@@ -400,10 +400,9 @@ function addFutureIncome(item) {
   }
   state.futureIncomes.push(entry)
   if (_userId) {
-    const persist = entry.refKey
-      ? storage.upsertFutureIncomeByRefKey(_userId, entry)
-      : storage.insertFutureIncome(_userId, entry)
-    persist.then(dbRow => { if (dbRow?.id) entry.id = dbRow.id }).catch(err => trackDbError('FutureIncome', err))
+    storage.insertFutureIncome(_userId, entry)
+      .then(dbRow => { if (dbRow?.id) entry.id = dbRow.id })
+      .catch(() => {}) // silently ignore if table not yet created or duplicate
   }
   return entry
 }

@@ -2,7 +2,7 @@
 import { useFinance } from '../composables/useFinance'
 import { usePrivacy } from '../composables/usePrivacy'
 
-const { state, balance, pendingShiftIncome, daysUntilPayday, getCurrencySymbol, fmtCurrency } = useFinance()
+const { state, balance, getCurrencySymbol, fmtCurrency } = useFinance()
 const { isUnlocked, toggleBlur } = usePrivacy()
 
 function formatMoney(amount) {
@@ -40,24 +40,6 @@ function formatMoney(amount) {
       >
         {{ formatMoney(balance) }}
       </h1>
-      <div class="mt-3 flex items-center gap-2 flex-wrap">
-        <p class="text-text-secondary text-sm flex items-center gap-1.5">
-          <svg class="w-4 h-4 text-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z" />
-          </svg>
-          Next payday in <span class="text-text-primary font-semibold">{{ daysUntilPayday }} days</span>
-        </p>
-        <!-- Pending shift income badge -->
-        <span
-          v-if="pendingShiftIncome > 0"
-          class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-warning/10 text-warning text-xs font-medium"
-        >
-          <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z" />
-          </svg>
-          {{ formatMoney(pendingShiftIncome) }} pending
-        </span>
-      </div>
     </div>
   </div>
 </template>
